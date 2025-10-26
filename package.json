@@ -1,0 +1,43 @@
+{
+  "name": "chess_engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "node scripts/test-system.js",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lichess-org/stockfish-web": "^0.0.13",
+    "@radix-ui/react-slot": "^1.2.3",
+    "chess.js": "^1.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.20",
+    "lucide-react": "^0.536.0",
+    "next": "15.4.6",
+    "react": "19.1.0",
+    "react-chessboard": "^5.2.2",
+    "react-dom": "19.1.0",
+    "shadcn": "^3.0.0",
+    "stockfish": "^17.1.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4.1.16",
+    "@types/chess.js": "^0.13.7",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9",
+    "eslint-config-next": "15.4.6",
+    "tailwindcss": "^4",
+    "tw-animate-css": "^1.3.6",
+    "typescript": "^5.9.2"
+  }
+}

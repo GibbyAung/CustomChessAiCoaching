@@ -1,0 +1,58 @@
+---
+alwaysApply: true
+---
+- Use Tailwind CSS utility classes for all component styling; avoid custom CSS unless necessary.
+- Follow Shadcn UI component structure and best practices for composability and accessibility.
+- Ensure all UI is fully responsive (mobile, tablet, desktop) using Tailwind's responsive utilities.
+- Use semantic HTML elements and ARIA attributes for accessibility.
+- Prefer functional, stateless components unless local state is required.
+- Use Tailwind's dark mode and color system for theme support.
+- Avoid inline styles except for dynamic values not supported by Tailwind.
+
+---
+description: React & TypeScript Code Quality Rules
+globs: **/*.{ts,tsx,js,jsx}
+---
+- Always use the latest stable versions of React, TypeScript, Next.js, and related libraries.
+- Use TypeScript for all new code; avoid using 'any' unless absolutely necessary.
+- Prefer explicit types and interfaces for props, state, and function signatures.
+- Use React hooks (useState, useEffect, useCallback, etc.) for state and side effects.
+- Avoid class components unless required for legacy reasons.
+- Use named exports for all components and utilities.
+- Write clear, descriptive variable and function names.
+- Keep components small and focused; extract logic into hooks or utilities when possible.
+- Document complex logic with JSDoc or inline comments.
+- Write unit tests for all business logic and critical UI components.
+
+---
+description: Next.js App Router & Project Structure
+globs: src/app/**/*.{ts,tsx}
+---
+- Use the Next.js App Router (app directory) for all routing and page structure.
+- Organize code by feature (feature folders) rather than by type (e.g., keep related components, hooks, and styles together).
+- Use server components for data fetching and static rendering where possible.
+- Use client components only for interactive UI.
+- Place shared UI components in src/components/ui and feature-specific components in their respective folders.
+- Use environment variables for configuration; never hardcode secrets.
+
+---
+description: Accessibility & UX Best Practices
+globs: **/*.{ts,tsx,js,jsx}
+---
+- Ensure all interactive elements are keyboard accessible.
+- Use semantic HTML and ARIA roles/labels for screen reader support.
+- Provide visible focus indicators for all focusable elements.
+- Test color contrast and support high-contrast/dark mode.
+- Use descriptive alt text for all images and icons.
+- Validate forms with clear error messages and accessible feedback.
+
+---
+description: General Project Conventions
+globs: **/*
+---
+- Use Prettier for code formatting and ESLint for linting; follow project .prettierrc and .eslintrc configs.
+- Commit messages should be clear and follow the Conventional Commits standard.
+- Write documentation for all public APIs, utilities, and complex modules.
+- Keep dependencies up to date and remove unused packages regularly.
+- Review and refactor code for readability and maintainability before merging.
+

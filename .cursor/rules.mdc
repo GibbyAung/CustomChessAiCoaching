@@ -1,0 +1,462 @@
+---
+alwaysApply: true
+---
+
+# Chess Engine Development Rules
+
+## Project Structure & Organization
+
+### Type Definitions
+
+- **ALWAYS** define types in separate files under `src/types/`
+- Use descriptive interface names (e.g., `CoachingMessage`, `GameState`)
+- Export types from dedicated files, never inline in components
+- Group related types together (e.g., `coaching.ts`, `chess-engine.ts`)
+
+### File Organization
+
+```
+src/
+├── types/           # All TypeScript type definitions
+├── components/      # React components
+├── lib/            # Business logic and utilities
+├── contexts/       # React contexts
+└── styles/         # CSS and styling files
+```
+
+## Code Quality Standards
+
+### TypeScript Best Practices
+
+- Use strict typing - avoid `any` types
+- Define proper interfaces for all props and state
+- Use union types for limited options (e.g., `"w" | "b"`)
+- Always check for undefined/null before accessing properties
+- Use optional chaining (`?.`) and nullish coalescing (`??`)
+
+### React Component Guidelines
+
+- Use functional components with hooks
+- Define prop interfaces separately in types files
+- Use proper key props for list items
+- Implement proper error boundaries
+- Use `useCallback` and `useMemo` for performance optimization
+
+### Chess Engine Integration
+
+- Always validate FEN strings before processing
+- Handle Stockfish worker communication properly
+- Implement proper error handling for engine failures
+- Use consistent evaluation units (centipawns)
+- Log important events but avoid console spam
+
+## AI Coaching System
+
+### Coaching Toaster Requirements
+
+- Must integrate with actual game state from ChessContext
+- Should receive real evaluations from Stockfish engine
+- Must provide meaningful feedback based on move quality
+- Should be draggable and resizable
+- Must have proper show/hide animations
+
+### Coaching Logic
+
+- Analyze moves based on evaluation changes
+- Provide different message types (blunder, brilliant, etc.)
+- Give contextual advice based on game phase
+- Store coaching history for learning patterns
+
+## Stockfish Engine Integration
+
+### UCI Options
+
+- Always set Skill Level to 20 for maximum strength
+- Use proper hash table size (64MB)
+- Disable UCI_LimitStrength for full evaluation
+- Set appropriate time limits for analysis
+
+### Evaluation System
+
+- Use enhanced material evaluation when Stockfish returns 0 cp
+- Provide fallback evaluation for positions with material differences
+- Log evaluation changes for debugging
+- Handle mate scores properly
+
+## Error Handling
+
+### Required Error Handling
+
+- Stockfish worker failures
+- Invalid FEN strings
+- Network connectivity issues
+- Component mounting/unmounting edge cases
+- User input validation
+
+### Logging Standards
+
+- Use consistent log prefixes (e.g., `🔧 StockfishEngine:`)
+- Log important state changes
+- Avoid excessive debug logging in production
+- Use structured logging for analytics
+
+## Performance Considerations
+
+### Optimization Rules
+
+- Lazy load heavy components
+- Use React.memo for expensive components
+- Implement proper cleanup in useEffect
+- Avoid unnecessary re-renders
+- Use Web Workers for heavy computations
+
+### Memory Management
+
+- Clean up event listeners
+- Cancel pending requests on unmount
+- Clear intervals and timeouts
+- Dispose of Web Workers properly
+
+## Testing Requirements
+
+### Component Testing
+
+- Test user interactions
+- Verify prop passing
+- Test error states
+- Validate accessibility
+
+### Integration Testing
+
+- Test Stockfish communication
+- Verify coaching system integration
+- Test game state synchronization
+- Validate evaluation accuracy
+
+## Accessibility & UX
+
+### User Experience
+
+- Provide clear visual feedback
+- Use consistent color schemes
+- Implement proper loading states
+- Handle edge cases gracefully
+
+### Accessibility
+
+- Use semantic HTML elements
+- Provide proper ARIA labels
+- Ensure keyboard navigation
+- Support screen readers
+
+## Security & Best Practices
+
+### Security
+
+- Validate all user inputs
+- Sanitize data before processing
+- Use proper CORS settings
+- Implement rate limiting for API calls
+
+### Code Quality
+
+- Use ESLint and Prettier
+- Follow consistent naming conventions
+- Write self-documenting code
+- Add JSDoc comments for complex functions
+
+## Common Pitfalls to Avoid
+
+### Type Safety Issues
+
+- Don't use `any` types
+- Always check for undefined properties
+- Use proper type guards
+- Validate external data
+
+### React Anti-patterns
+
+- Don't mutate state directly
+- Avoid unnecessary useEffect dependencies
+- Don't forget cleanup functions
+- Use proper key props
+
+### Chess Engine Issues
+
+- Don't ignore Stockfish errors
+- Always validate FEN strings
+- Handle timeout scenarios
+- Don't block UI with engine calls
+
+## Development Workflow
+
+### Before Making Changes
+
+1. Check existing types in `src/types/`
+2. Verify component interfaces
+3. Plan error handling strategy
+4. Consider performance implications
+
+### During Development
+
+1. Use proper TypeScript types
+2. Implement comprehensive error handling
+3. Add appropriate logging
+4. Test edge cases
+
+### After Implementation
+
+1. Run linting and type checking
+2. Test all user interactions
+3. Verify integration points
+4. Update documentation if needed
+
+## AI Agent Collaboration Guidelines
+
+### When Working with AI Agents
+
+- Always reference existing types before creating new ones
+- Check for similar implementations before duplicating code
+- Use consistent naming patterns across the codebase
+- Follow the established file organization structure
+- Implement proper error handling from the start
+- Test integration points thoroughly
+
+### Code Review Checklist
+
+- [ ] Types are properly defined in separate files
+- [ ] Components use proper prop interfaces
+- [ ] Error handling is comprehensive
+- [ ] Performance considerations are addressed
+- [ ] Accessibility requirements are met
+- [ ] Integration points are tested
+- [ ] Logging is appropriate and consistent
+# Chess Engine Development Rules
+
+## Project Structure & Organization
+
+### Type Definitions
+
+- **ALWAYS** define types in separate files under `src/types/`
+- Use descriptive interface names (e.g., `CoachingMessage`, `GameState`)
+- Export types from dedicated files, never inline in components
+- Group related types together (e.g., `coaching.ts`, `chess-engine.ts`)
+
+### File Organization
+
+```
+src/
+├── types/           # All TypeScript type definitions
+├── components/      # React components
+├── lib/            # Business logic and utilities
+├── contexts/       # React contexts
+└── styles/         # CSS and styling files
+```
+
+## Code Quality Standards
+
+### TypeScript Best Practices
+
+- Use strict typing - avoid `any` types
+- Define proper interfaces for all props and state
+- Use union types for limited options (e.g., `"w" | "b"`)
+- Always check for undefined/null before accessing properties
+- Use optional chaining (`?.`) and nullish coalescing (`??`)
+
+### React Component Guidelines
+
+- Use functional components with hooks
+- Define prop interfaces separately in types files
+- Use proper key props for list items
+- Implement proper error boundaries
+- Use `useCallback` and `useMemo` for performance optimization
+
+### Chess Engine Integration
+
+- Always validate FEN strings before processing
+- Handle Stockfish worker communication properly
+- Implement proper error handling for engine failures
+- Use consistent evaluation units (centipawns)
+- Log important events but avoid console spam
+
+## AI Coaching System
+
+### Coaching Toaster Requirements
+
+- Must integrate with actual game state from ChessContext
+- Should receive real evaluations from Stockfish engine
+- Must provide meaningful feedback based on move quality
+- Should be draggable and resizable
+- Must have proper show/hide animations
+
+### Coaching Logic
+
+- Analyze moves based on evaluation changes
+- Provide different message types (blunder, brilliant, etc.)
+- Give contextual advice based on game phase
+- Store coaching history for learning patterns
+
+## Stockfish Engine Integration
+
+### UCI Options
+
+- Always set Skill Level to 20 for maximum strength
+- Use proper hash table size (64MB)
+- Disable UCI_LimitStrength for full evaluation
+- Set appropriate time limits for analysis
+
+### Evaluation System
+
+- Use enhanced material evaluation when Stockfish returns 0 cp
+- Provide fallback evaluation for positions with material differences
+- Log evaluation changes for debugging
+- Handle mate scores properly
+
+## Error Handling
+
+### Required Error Handling
+
+- Stockfish worker failures
+- Invalid FEN strings
+- Network connectivity issues
+- Component mounting/unmounting edge cases
+- User input validation
+
+### Logging Standards
+
+- Use consistent log prefixes (e.g., `🔧 StockfishEngine:`)
+- Log important state changes
+- Avoid excessive debug logging in production
+- Use structured logging for analytics
+
+## Performance Considerations
+
+### Optimization Rules
+
+- Lazy load heavy components
+- Use React.memo for expensive components
+- Implement proper cleanup in useEffect
+- Avoid unnecessary re-renders
+- Use Web Workers for heavy computations
+
+### Memory Management
+
+- Clean up event listeners
+- Cancel pending requests on unmount
+- Clear intervals and timeouts
+- Dispose of Web Workers properly
+
+## Testing Requirements
+
+### Component Testing
+
+- Test user interactions
+- Verify prop passing
+- Test error states
+- Validate accessibility
+
+### Integration Testing
+
+- Test Stockfish communication
+- Verify coaching system integration
+- Test game state synchronization
+- Validate evaluation accuracy
+
+## Accessibility & UX
+
+### User Experience
+
+- Provide clear visual feedback
+- Use consistent color schemes
+- Implement proper loading states
+- Handle edge cases gracefully
+
+### Accessibility
+
+- Use semantic HTML elements
+- Provide proper ARIA labels
+- Ensure keyboard navigation
+- Support screen readers
+
+## Security & Best Practices
+
+### Security
+
+- Validate all user inputs
+- Sanitize data before processing
+- Use proper CORS settings
+- Implement rate limiting for API calls
+
+### Code Quality
+
+- Use ESLint and Prettier
+- Follow consistent naming conventions
+- Write self-documenting code
+- Add JSDoc comments for complex functions
+
+## Common Pitfalls to Avoid
+
+### Type Safety Issues
+
+- Don't use `any` types
+- Always check for undefined properties
+- Use proper type guards
+- Validate external data
+
+### React Anti-patterns
+
+- Don't mutate state directly
+- Avoid unnecessary useEffect dependencies
+- Don't forget cleanup functions
+- Use proper key props
+
+### Chess Engine Issues
+
+- Don't ignore Stockfish errors
+- Always validate FEN strings
+- Handle timeout scenarios
+- Don't block UI with engine calls
+
+## Development Workflow
+
+### Before Making Changes
+
+1. Check existing types in `src/types/`
+2. Verify component interfaces
+3. Plan error handling strategy
+4. Consider performance implications
+
+### During Development
+
+1. Use proper TypeScript types
+2. Implement comprehensive error handling
+3. Add appropriate logging
+4. Test edge cases
+
+### After Implementation
+
+1. Run linting and type checking
+2. Test all user interactions
+3. Verify integration points
+4. Update documentation if needed
+
+## AI Agent Collaboration Guidelines
+
+### When Working with AI Agents
+
+- Always reference existing types before creating new ones
+- Check for similar implementations before duplicating code
+- Use consistent naming patterns across the codebase
+- Follow the established file organization structure
+- Implement proper error handling from the start
+- Test integration points thoroughly
+
+### Code Review Checklist
+
+- [ ] Types are properly defined in separate files
+- [ ] Components use proper prop interfaces
+- [ ] Error handling is comprehensive
+- [ ] Performance considerations are addressed
+- [ ] Accessibility requirements are met
+- [ ] Integration points are tested
+- [ ] Logging is appropriate and consistent
