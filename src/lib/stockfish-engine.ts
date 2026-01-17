@@ -210,12 +210,13 @@ export class StockfishEngine {
 
   async analyzePosition(
     fen: string,
-    cfg?: { maxDepth?: number; maxTimeMs?: number }
+    cfg?: { maxDepth?: number; maxTimeMs?: number; multiPV?: number }
   ): Promise<{
     bestMove: string | null;
     evaluation: number;
     depth: number;
     timeMs: number;
+    topMoves?: Array<{ move: string; eval: number; pv?: string }>;
   }> {
     if (!this.ready) throw new Error("Engine not initialized");
     if (!this.worker) throw new Error("Stockfish worker not available");
@@ -225,7 +226,11 @@ export class StockfishEngine {
     this.worker.postMessage({ type: "position", payload: { fen } });
     this.worker.postMessage({
       type: "go",
-      payload: { movetime: cfg?.maxTimeMs ?? 3000, depth: cfg?.maxDepth },
+      payload: {
+        movetime: cfg?.maxTimeMs ?? 3000,
+        depth: cfg?.maxDepth,
+        multiPV: cfg?.multiPV ?? 5,
+      },
     });
 
     let bestmove = "";
@@ -236,6 +241,10 @@ export class StockfishEngine {
     let analysisCount = 0;
     const maxAnalysisCount = 100; // Prevent infinite loops
     let lastInfoTime = Date.now();
+
+    // Initialize topMoves array for MultiPV results
+    const topMoves: Array<{ move: string; eval: number; pv?: string }> = [];
+    const requestedMultiPV = cfg?.multiPV ?? 5;
 
     while (analysisCount < maxAnalysisCount) {
       const msg = await this.waitFor(
@@ -286,6 +295,27 @@ export class StockfishEngine {
           evaluation = mateMoves > 0 ? 10000 : -10000;
           lastEvaluation = evaluation;
           console.log(`🔧 StockfishEngine: Captured mate: ${mateMoves} moves`);
+        }
+
+        // NEW: MultiPV + PV parsing
+        const multipvMatch = line.match(/multipv (\d+)/);
+        const pvMatch = line.match(/pv ([\w\s]+)/);
+
+        if (multipvMatch && pvMatch) {
+          const multipv = parseInt(multipvMatch[1]);
+          const pvMoves = pvMatch[1].trim().split(" ").slice(0, 5);
+          const currentEval = evaluation || lastEvaluation;
+
+          console.log(`MultiPV ${multipv}: ${pvMoves[0]} (${currentEval}cp)`);
+
+          // Store for coaching (array is 0-indexed, MultiPV is 1-indexed)
+          if (multipv <= requestedMultiPV) {
+            topMoves[multipv - 1] = {
+              move: pvMoves[0],
+              eval: currentEval,
+              pv: pvMoves.join(" "),
+            };
+          }
         }
 
         // Store the best evaluation we've seen (highest depth with non-zero score)
@@ -352,6 +382,7 @@ export class StockfishEngine {
       evaluation,
       depth,
       timeMs: Date.now() - start,
+      topMoves: topMoves.length > 0 ? topMoves : undefined,
     };
   }
 

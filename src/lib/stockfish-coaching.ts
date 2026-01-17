@@ -3,6 +3,9 @@
 import { stockfishEngine } from "./stockfish-engine";
 import { opponentAnalyzer, OpponentAnalysis } from "./opponent-analysis";
 import { blunderDetector, BlunderDetectionResult } from "./blunder-detection";
+import { coachingFeedback, MoveQuality } from "./coaching-feedback";
+import { toastManager } from "./toast-manager";
+import { llmCoaching } from "./llm-integration";
 
 export interface CoachingAnalysis {
   bestMove: string;
@@ -15,6 +18,7 @@ export interface CoachingAnalysis {
   moveHints: MoveHint[];
   opponentAnalysis?: OpponentAnalysis; // Add opponent analysis to coaching analysis
   blunderAnalysis?: BlunderDetectionResult; // Add blunder analysis to coaching analysis
+  topMoves?: Array<{ move: string; eval: number; pv?: string }>; // Add MultiPV results
 }
 
 export interface ThinkingStep {
@@ -49,7 +53,9 @@ export class StockfishCoaching {
   private currentAnalysis: CoachingAnalysis | null = null;
   private onThinkingUpdate?: (step: ThinkingStep) => void;
   private onAnalysisComplete?: (analysis: CoachingAnalysis) => void;
-  private onBlunderDetected?: (blunder: BlunderDetectionResult) => void; // New callback for blunders
+  private onBlunderDetected?: (blunder: BlunderDetectionResult) => void;
+  private analysisCache = new Map<string, number>(); // Cache for deduplication
+  private readonly CACHE_DURATION = 5000; // 5 seconds cache
 
   async initialize(): Promise<void> {
     await this.engine.initialize();
@@ -58,7 +64,7 @@ export class StockfishCoaching {
   setCallbacks(
     onThinkingUpdate?: (step: ThinkingStep) => void,
     onAnalysisComplete?: (analysis: CoachingAnalysis) => void,
-    onBlunderDetected?: (blunder: BlunderDetectionResult) => void // Add blunder callback
+    onBlunderDetected?: (blunder: BlunderDetectionResult) => void, // Add blunder callback
   ) {
     this.onThinkingUpdate = onThinkingUpdate;
     this.onAnalysisComplete = onAnalysisComplete;
@@ -67,7 +73,7 @@ export class StockfishCoaching {
 
   async analyzePosition(
     fen: string,
-    config: CoachingConfig = {}
+    config: CoachingConfig = {},
   ): Promise<CoachingAnalysis> {
     // If already analyzing, return current analysis or wait
     if (this.isAnalyzing) {
@@ -86,6 +92,7 @@ export class StockfishCoaching {
       const analysis = await this.engine.analyzePosition(fen, {
         maxDepth: config.maxDepth || 20,
         maxTimeMs: config.maxTimeMs || 3000,
+        multiPV: 5, // Get top 5 moves for coaching
       });
 
       // Get opponent analysis if requested
@@ -107,11 +114,16 @@ export class StockfishCoaching {
         nodesSearched: (analysis as any).nodesSearched || 0,
         principalVariation: this.extractPrincipalVariation(
           fen,
-          analysis.bestMove || ""
+          analysis.bestMove || "",
         ),
         thinkingProcess: [],
-        moveHints: this.generateMoveHints(analysis.evaluation, analysis.depth),
+        moveHints: this.generateMoveHints(
+          analysis.evaluation,
+          analysis.depth,
+          analysis.topMoves,
+        ),
         opponentAnalysis, // Include opponent analysis
+        topMoves: analysis.topMoves, // Include MultiPV results
       };
 
       this.currentAnalysis = coachingAnalysis;
@@ -133,13 +145,13 @@ export class StockfishCoaching {
   async analyzeMoveForBlunders(
     fen: string,
     move: string,
-    currentEvaluation: number
+    currentEvaluation: number,
   ): Promise<BlunderDetectionResult> {
     try {
       const blunderResult = await blunderDetector.analyzeMove(
         fen,
         move,
-        currentEvaluation
+        currentEvaluation,
       );
 
       // If a blunder is detected, trigger the callback
@@ -167,7 +179,7 @@ export class StockfishCoaching {
    */
   async analyzeLastMove(
     fen: string,
-    lastMove: string
+    lastMove: string,
   ): Promise<{
     moveAnalysis: MoveHint;
     blunderAnalysis?: BlunderDetectionResult;
@@ -195,7 +207,7 @@ export class StockfishCoaching {
         blunderAnalysis = await this.analyzeMoveForBlunders(
           fen,
           lastMove,
-          analysis.evaluation
+          analysis.evaluation,
         );
       } catch (error) {
         console.warn("Failed to analyze move for blunders:", error);
@@ -220,7 +232,7 @@ export class StockfishCoaching {
    */
   async getAIOpponentMove(
     fen: string,
-    difficulty: "easy" | "medium" | "hard" = "medium"
+    difficulty: "easy" | "medium" | "hard" = "medium",
   ): Promise<{
     move: string;
     analysis: CoachingAnalysis;
@@ -245,7 +257,7 @@ export class StockfishCoaching {
         blunderAnalysis = await this.analyzeMoveForBlunders(
           fen,
           analysis.bestMove,
-          analysis.evaluation
+          analysis.evaluation,
         );
       } catch (error) {
         console.warn("Failed to analyze AI move for blunders:", error);
@@ -329,7 +341,8 @@ export class StockfishCoaching {
       });
       const moveHints = this.generateMoveHints(
         analysis.evaluation,
-        analysis.depth
+        analysis.depth,
+        analysis.topMoves,
       );
 
       return {
@@ -382,25 +395,25 @@ export class StockfishCoaching {
         // Test comprehensive insights
         const insights = await this.getComprehensiveInsights(testCase.fen);
         console.log(
-          `✅ Position Insights: ${insights.positionInsights.length} insights generated`
+          `✅ Position Insights: ${insights.positionInsights.length} insights generated`,
         );
         console.log(
-          `✅ Opponent Analysis: ${insights.opponentAnalysis.threats.length} threats detected`
+          `✅ Opponent Analysis: ${insights.opponentAnalysis.threats.length} threats detected`,
         );
         console.log(
-          `✅ Move Hints: ${insights.moveHints.length} hints generated`
+          `✅ Move Hints: ${insights.moveHints.length} hints generated`,
         );
 
         // Test opponent analysis specifically
         const opponentAnalysis = await this.getOpponentAnalysis(testCase.fen);
         console.log(
-          `✅ Strategic Intent: ${opponentAnalysis.strategicIntent.primary}`
+          `✅ Strategic Intent: ${opponentAnalysis.strategicIntent.primary}`,
         );
         console.log(
-          `✅ Overall Assessment: ${opponentAnalysis.overallAssessment}`
+          `✅ Overall Assessment: ${opponentAnalysis.overallAssessment}`,
         );
         console.log(
-          `✅ Recommendations: ${opponentAnalysis.recommendations.length} recommendations`
+          `✅ Recommendations: ${opponentAnalysis.recommendations.length} recommendations`,
         );
       } catch (error) {
         console.error(`❌ Test failed for ${testCase.name}:`, error);
@@ -442,23 +455,23 @@ export class StockfishCoaching {
         const blunderResult = await this.analyzeMoveForBlunders(
           testCase.fen,
           testCase.move,
-          0 // Starting position evaluation
+          0, // Starting position evaluation
         );
 
         console.log(
           `✅ Blunder Detection: ${
             blunderResult.isBlunder ? "Blunder detected" : "No blunder"
-          }`
+          }`,
         );
         console.log(`✅ Move Type: ${blunderResult.blunderType}`);
         console.log(`✅ Feedback: ${blunderResult.immediateFeedback}`);
 
         if (blunderResult.analysis) {
           console.log(
-            `✅ Learning Opportunity: ${blunderResult.analysis.learningOpportunity}`
+            `✅ Learning Opportunity: ${blunderResult.analysis.learningOpportunity}`,
           );
           console.log(
-            `✅ Alternative Moves: ${blunderResult.analysis.alternativeMoves.length} found`
+            `✅ Alternative Moves: ${blunderResult.analysis.alternativeMoves.length} found`,
           );
         }
       } catch (error) {
@@ -500,10 +513,10 @@ export class StockfishCoaching {
       const opponentAnalysis = await this.getOpponentAnalysis(testPosition);
       console.log(`✅ Threats Detected: ${opponentAnalysis.threats.length}`);
       console.log(
-        `✅ Strategic Intent: ${opponentAnalysis.strategicIntent.primary}`
+        `✅ Strategic Intent: ${opponentAnalysis.strategicIntent.primary}`,
       );
       console.log(
-        `✅ Recommendations: ${opponentAnalysis.recommendations.length}`
+        `✅ Recommendations: ${opponentAnalysis.recommendations.length}`,
       );
     } catch (error) {
       console.error(`❌ Opponent Analysis Test Failed:`, error);
@@ -517,12 +530,12 @@ export class StockfishCoaching {
       const blunderResult = await this.analyzeMoveForBlunders(
         testPosition,
         "h2h3",
-        0
+        0,
       );
       console.log(
         `✅ Blunder Detection: ${
           blunderResult.isBlunder ? "Working" : "Working (no blunder detected)"
-        }`
+        }`,
       );
       console.log(`✅ Immediate Feedback: ${blunderResult.immediateFeedback}`);
       console.log(`✅ Move Categorization: ${blunderResult.blunderType}`);
@@ -541,7 +554,7 @@ export class StockfishCoaching {
       console.log(
         `✅ AI Blunder Analysis: ${
           aiMove.blunderAnalysis ? "Working" : "Not applicable"
-        }`
+        }`,
       );
     } catch (error) {
       console.error(`❌ AI Opponent Test Failed:`, error);
@@ -554,7 +567,7 @@ export class StockfishCoaching {
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
       const insights = await this.getComprehensiveInsights(testPosition);
       console.log(
-        `✅ Position Insights: ${insights.positionInsights.length} generated`
+        `✅ Position Insights: ${insights.positionInsights.length} generated`,
       );
       console.log(`✅ Opponent Analysis: Integrated`);
       console.log(`✅ Move Hints: ${insights.moveHints.length} generated`);
@@ -574,7 +587,7 @@ export class StockfishCoaching {
 
   async getMoveHint(
     fen: string,
-    currentMove: string
+    currentMove: string,
   ): Promise<MoveHint | null> {
     try {
       const analysis = await this.analyzePosition(fen, {
@@ -591,7 +604,7 @@ export class StockfishCoaching {
         description: this.describeMove(
           analysis.bestMove,
           analysis.evaluation,
-          fen
+          fen,
         ),
         type: this.categorizeMove(analysis.evaluation, analysis.depth),
       };
@@ -617,13 +630,13 @@ export class StockfishCoaching {
         insights.push(
           analysis.evaluation > 0
             ? "White has a significant advantage in this position"
-            : "Black has a significant advantage in this position"
+            : "Black has a significant advantage in this position",
         );
       } else if (Math.abs(analysis.evaluation) > 50) {
         insights.push(
           analysis.evaluation > 0
             ? "White has a slight advantage"
-            : "Black has a slight advantage"
+            : "Black has a slight advantage",
         );
       } else {
         insights.push("The position is approximately equal");
@@ -646,17 +659,17 @@ export class StockfishCoaching {
       // Add specific insights based on game phase
       if (gamePhase === "opening") {
         insights.push(
-          "Focus on controlling the center and developing your pieces"
+          "Focus on controlling the center and developing your pieces",
         );
         insights.push(
-          "Avoid moving the same piece multiple times in the opening"
+          "Avoid moving the same piece multiple times in the opening",
         );
       } else if (gamePhase === "middlegame") {
         insights.push("Look for tactical opportunities and piece coordination");
         insights.push("Consider pawn structure and king safety");
       } else if (gamePhase === "endgame") {
         insights.push(
-          "In endgames, king activity and pawn advancement are crucial"
+          "In endgames, king activity and pawn advancement are crucial",
         );
         insights.push("Calculate precisely - every move counts");
       }
@@ -674,10 +687,25 @@ export class StockfishCoaching {
     return bestMove ? [bestMove] : [];
   }
 
-  private generateMoveHints(evaluation: number, depth: number): MoveHint[] {
+  private generateMoveHints(
+    evaluation: number,
+    depth: number,
+    topMoves?: Array<{ move: string; eval: number; pv?: string }>,
+  ): MoveHint[] {
     const hints: MoveHint[] = [];
 
-    // Generate hints based on evaluation and depth
+    // If we have MultiPV results, use them for better move hints
+    if (topMoves && topMoves.length > 0) {
+      return topMoves.map((m, i) => ({
+        move: m.move,
+        evaluation: m.eval,
+        description:
+          i === 0 ? "Best move" : `Good alternative (${i + 1}nd best)`,
+        type: i === 0 ? "best" : ("good" as const),
+      }));
+    }
+
+    // Fallback to original logic if no MultiPV results
     if (depth >= 15) {
       hints.push({
         move: "Best move found",
@@ -748,19 +776,19 @@ export class StockfishCoaching {
           move,
           moveType,
           positionContext,
-          "opening"
+          "opening",
         ),
         middlegame: this.getBestMoveExplanation(
           move,
           moveType,
           positionContext,
-          "middlegame"
+          "middlegame",
         ),
         endgame: this.getBestMoveExplanation(
           move,
           moveType,
           positionContext,
-          "endgame"
+          "endgame",
         ),
       },
       good: {
@@ -768,19 +796,19 @@ export class StockfishCoaching {
           move,
           moveType,
           positionContext,
-          "opening"
+          "opening",
         ),
         middlegame: this.getGoodMoveExplanation(
           move,
           moveType,
           positionContext,
-          "middlegame"
+          "middlegame",
         ),
         endgame: this.getGoodMoveExplanation(
           move,
           moveType,
           positionContext,
-          "endgame"
+          "endgame",
         ),
       },
       inaccurate: {
@@ -788,19 +816,19 @@ export class StockfishCoaching {
           move,
           moveType,
           positionContext,
-          "opening"
+          "opening",
         ),
         middlegame: this.getInaccurateMoveExplanation(
           move,
           moveType,
           positionContext,
-          "middlegame"
+          "middlegame",
         ),
         endgame: this.getInaccurateMoveExplanation(
           move,
           moveType,
           positionContext,
-          "endgame"
+          "endgame",
         ),
       },
       mistake: {
@@ -808,19 +836,19 @@ export class StockfishCoaching {
           move,
           moveType,
           positionContext,
-          "opening"
+          "opening",
         ),
         middlegame: this.getMistakeExplanation(
           move,
           moveType,
           positionContext,
-          "middlegame"
+          "middlegame",
         ),
         endgame: this.getMistakeExplanation(
           move,
           moveType,
           positionContext,
-          "endgame"
+          "endgame",
         ),
       },
       blunder: {
@@ -828,19 +856,19 @@ export class StockfishCoaching {
           move,
           moveType,
           positionContext,
-          "opening"
+          "opening",
         ),
         middlegame: this.getBlunderExplanation(
           move,
           moveType,
           positionContext,
-          "middlegame"
+          "middlegame",
         ),
         endgame: this.getBlunderExplanation(
           move,
           moveType,
           positionContext,
-          "endgame"
+          "endgame",
         ),
       },
     };
@@ -893,7 +921,7 @@ export class StockfishCoaching {
     move: string,
     moveType: string,
     context: string,
-    phase: string
+    phase: string,
   ): string {
     const baseExplanations = {
       opening: {
@@ -928,7 +956,7 @@ export class StockfishCoaching {
     move: string,
     moveType: string,
     context: string,
-    phase: string
+    phase: string,
   ): string {
     const baseExplanations = {
       opening: {
@@ -963,7 +991,7 @@ export class StockfishCoaching {
     move: string,
     moveType: string,
     context: string,
-    phase: string
+    phase: string,
   ): string {
     const baseExplanations = {
       opening: {
@@ -998,7 +1026,7 @@ export class StockfishCoaching {
     move: string,
     moveType: string,
     context: string,
-    phase: string
+    phase: string,
   ): string {
     const baseExplanations = {
       opening: {
@@ -1033,7 +1061,7 @@ export class StockfishCoaching {
     move: string,
     moveType: string,
     context: string,
-    phase: string
+    phase: string,
   ): string {
     const baseExplanations = {
       opening: {
@@ -1070,6 +1098,110 @@ export class StockfishCoaching {
 
   isCurrentlyAnalyzing(): boolean {
     return this.isAnalyzing;
+  }
+
+  // Add this method to your StockfishCoaching class
+  async analyzeAndShowFeedback(fen: string, lastMove: string): Promise<void> {
+    // Create cache key from FEN and move
+    const cacheKey = `${fen}-${lastMove}`;
+    const now = Date.now();
+
+    // Check if we recently analyzed this exact position
+    const lastAnalysis = this.analysisCache.get(cacheKey);
+    if (lastAnalysis && now - lastAnalysis < this.CACHE_DURATION) {
+      console.log("🔄 Analysis recently completed, skipping duplicate request");
+      return;
+    }
+
+    // Prevent rapid duplicate analysis
+    if (this.isAnalyzing) {
+      console.log("🔄 Analysis already in progress, skipping duplicate call");
+      return;
+    }
+
+    console.log(
+      "🔍 Starting LLM-powered analysis for move:",
+      lastMove,
+      "FEN:",
+      fen,
+    );
+
+    try {
+      // Try LLM coaching first
+      const result = await llmCoaching.analyzeWithLLM(fen, lastMove);
+      console.log("🤖 LLM Analysis complete:", result.llm);
+
+      // Show LLM coaching as toast
+      llmCoaching.getCoach().showCoaching(result.llm);
+    } catch (error) {
+      // Handle cooldown gracefully - don't log as error
+      if (
+        error instanceof Error &&
+        error.message === "Analysis cooldown active"
+      ) {
+        console.log("⏸️ LLM analysis cooldown - skipping");
+      } else {
+        console.log(
+          "⚠️ LLM coaching failed, falling back to rule-based:",
+          error,
+        );
+      }
+
+      // Fallback to original rule-based coaching
+      try {
+        const analysis = await this.analyzePosition(fen, {
+          maxDepth: 15,
+          maxTimeMs: 2000,
+        });
+
+        // Cache this analysis
+        this.analysisCache.set(cacheKey, now);
+        this.cleanCache();
+
+        // Determine move quality
+        const quality = this.evaluateMoveQuality(analysis.evaluation, lastMove);
+        const gamePhase = this.getGamePhase(fen);
+
+        console.log("📊 Fallback analysis results:", {
+          quality,
+          evaluation: analysis.evaluation,
+          gamePhase,
+        });
+
+        // Generate and show feedback
+        const feedback = coachingFeedback.generateFeedback(
+          quality,
+          analysis.evaluation,
+          gamePhase,
+        );
+
+        console.log("💬 Generated fallback feedback:", feedback);
+        coachingFeedback.showFeedback(feedback);
+      } catch (fallbackError) {
+        console.error("Both LLM and fallback analysis failed:", fallbackError);
+      }
+    }
+  }
+
+  private cleanCache() {
+    const now = Date.now();
+    for (const [key, timestamp] of this.analysisCache.entries()) {
+      if (now - timestamp > this.CACHE_DURATION) {
+        this.analysisCache.delete(key);
+      }
+    }
+  }
+
+  private evaluateMoveQuality(evaluation: number, move: string): MoveQuality {
+    // Simplified quality evaluation
+    const absEval = Math.abs(evaluation);
+
+    if (absEval > 500) return "blunder";
+    if (absEval > 200) return "mistake";
+    if (absEval > 100) return "inaccurate";
+    if (absEval < 20) return "excellent";
+    if (absEval < 50) return "good";
+    return "good";
   }
 
   destroy() {

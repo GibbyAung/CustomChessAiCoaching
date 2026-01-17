@@ -19,6 +19,7 @@
     "framer-motion": "^12.23.20",
     "lucide-react": "^0.536.0",
     "next": "15.4.6",
+    "openai": "^6.16.0",
     "react": "19.1.0",
     "react-chessboard": "^5.2.2",
     "react-dom": "19.1.0",

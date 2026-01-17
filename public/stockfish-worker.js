@@ -168,15 +168,23 @@ self.onmessage = async (e) => {
     }
 
     if (type === "go") {
-      const { movetime, depth } = payload || {};
+      const { movetime, depth, multiPV = 1 } = payload || {};
 
+      let goCmd = "go";
       if (movetime) {
-        stockfish.uci(`go movetime ${movetime}`);
+        goCmd += ` movetime ${movetime}`;
       } else if (depth) {
-        stockfish.uci(`go depth ${depth}`);
+        goCmd += ` depth ${depth}`;
       } else {
-        stockfish.uci("go movetime 1000");
+        goCmd += " movetime 1000";
       }
+
+      // Append MultiPV safely
+      if (multiPV && multiPV > 1) {
+        goCmd += ` MultiPV ${multiPV}`;
+      }
+
+      stockfish.uci(goCmd);
       return;
     }
 
