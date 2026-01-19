@@ -9,6 +9,7 @@ export interface GameState {
   isDraw: boolean;
   turn: "w" | "b";
   moveHistory: Move[];
+  lastMove?: string;
 }
 
 export interface AnalysisResult {

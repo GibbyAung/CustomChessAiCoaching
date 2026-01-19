@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useChessEngine } from "@/contexts/ChessEngineContext";
 import { Chess } from "chess.js";
-import { stockfishCoaching, CoachingAnalysis } from "@/lib/stockfish-coaching";
+import type { EngineAnalysis } from "@/lib/engine/interface";
+
 
 interface ModernEvaluationBarProps {
   fen: string;
@@ -19,8 +20,7 @@ export default function ModernEvaluationBar({
   const { engineState } = useChessEngine();
   const [evaluation, setEvaluation] = useState<number>(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [currentAnalysis, setCurrentAnalysis] =
-    useState<CoachingAnalysis | null>(null);
+  const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null);
   const [thinkingSteps, setThinkingSteps] = useState<any[]>([]);
 
   // Parse FEN to get current turn
@@ -38,13 +38,13 @@ export default function ModernEvaluationBar({
       if (!engineState.isLoaded) return;
 
       try {
-        const analysis = await stockfishCoaching.analyzePosition(fen, {
-          maxDepth: 15,
-          maxTimeMs: 500,
-          showThinking: showThinking,
-        });
-        setCurrentAnalysis(analysis);
-        setEvaluation(analysis.evaluation);
+        // Use engine state analysis if available
+        if (engineState.lastAnalysis) {
+          setAnalysis(engineState.lastAnalysis);
+          setEvaluation(engineState.lastAnalysis.evaluation);
+        } else {
+          setEvaluation(0);
+        }
       } catch (error) {
         console.error("Failed to evaluate position:", error);
         setEvaluation(0);
@@ -54,7 +54,7 @@ export default function ModernEvaluationBar({
     // Debounce evaluation updates to prevent rapid re-renders
     const timeoutId = setTimeout(updateEvaluation, 100);
     return () => clearTimeout(timeoutId);
-  }, [fen, engineState.isLoaded, showThinking]);
+  }, [fen, engineState.isLoaded, engineState.lastAnalysis, showThinking]);
 
   // Convert centipawns to a percentage for display
   const getEvaluationPercentage = (evaluation: number): number => {
@@ -72,7 +72,7 @@ export default function ModernEvaluationBar({
 
   const getAdvantageText = (
     evaluation: number,
-    currentTurn: string
+    currentTurn: string,
   ): string => {
     if (Math.abs(evaluation) < 50) return "Equal";
 
@@ -132,7 +132,7 @@ export default function ModernEvaluationBar({
 
         {/* Depth marker - smaller */}
         <div className="absolute top-1 left-1/2 transform -translate-x-1/2 text-[10px] text-gray-300 font-mono">
-          {currentAnalysis?.depth || 0}
+          {analysis?.depth || 0}
         </div>
       </div>
 
@@ -147,18 +147,16 @@ export default function ModernEvaluationBar({
       </div>
 
       {/* Thinking process - only show if needed */}
-      {showThinking && currentAnalysis && (
+      {showThinking && analysis && (
         <div className="w-full max-w-16">
           <div className="text-[10px] text-gray-400 text-center mb-1">
             Analysis
           </div>
           <div className="space-y-0.5">
-            <div className="text-[10px] text-gray-300">
-              D:{currentAnalysis.depth}
-            </div>
-            {currentAnalysis.bestMove && (
+            <div className="text-[10px] text-gray-300">D:{analysis.depth}</div>
+            {analysis.bestMove && (
               <div className="text-[10px] text-green-300 font-mono">
-                {currentAnalysis.bestMove}
+                {analysis.bestMove.san}
               </div>
             )}
           </div>

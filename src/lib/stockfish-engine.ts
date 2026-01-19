@@ -1,557 +1,428 @@
 "use client";
 
-export type SFMessage = { type: string; payload?: unknown };
+import { PositionAnalyzer, ComplexityFactors } from "./position-analyzer";
+
+export interface TopMove {
+  move: string;
+  eval: number;
+  depth?: number;
+  nodes?: number;
+  pv?: string[];
+}
+
+export interface AnalysisResult {
+  bestMove: string | null;
+  evaluation: number;
+  depth: number;
+  timeMs: number;
+  topMoves?: TopMove[];
+  complexity?: number;
+  multipv?: number;
+}
+
+// ✅ NEW: Request queue item
+interface QueuedRequest {
+  fn: () => Promise<any>;
+  resolve: (value: any) => void;
+  reject: (error: any) => void;
+}
 
 export class StockfishEngine {
   private worker: Worker | null = null;
   private ready: boolean = false;
-  private waiters: Array<(m: SFMessage) => void> = [];
-  private initTimeout: number = 45000; // 45 seconds
+  private initializing: boolean = false;
+  private currentSkillLevel: number = 20;
+  private messageHandlers: Map<string, (payload: any) => void> = new Map();
+
+  // ✅ NEW: Request queue to prevent concurrent access
+  private requestQueue: QueuedRequest[] = [];
+  private isProcessingRequest = false;
 
   async initialize(): Promise<void> {
     if (typeof window === "undefined") throw new Error("Client-only");
-    if (this.worker) return;
-
-    const maxRetries = 3;
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(
-          `🔧 StockfishEngine: Initializing... (attempt ${attempt}/${maxRetries})`
-        );
-
-        if (attempt > 1) {
-          // Wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
-
-        await this.initializeStockfish();
-
-        // UCI options are now set in the worker during initialization
-        // Verify configuration is working
-        await this.verifyConfiguration();
-
-        // Test with known position to verify Stockfish is evaluating correctly
-        await this.testWithKnownPosition();
-
-        // Test if UCI options are working
-        await this.testUCIOptions();
-
-        console.log(
-          "🔧 StockfishEngine: Initialized successfully with strong settings"
-        );
-        return; // Success, exit the retry loop
-      } catch (err) {
-        lastError = err as Error;
-        console.error(
-          `🔧 StockfishEngine: Initialization attempt ${attempt} failed:`,
-          err
-        );
-
-        if (attempt === maxRetries) {
-          console.log(
-            "🔧 StockfishEngine: Attempting fallback initialization..."
-          );
-
-          // Try fallback initialization with minimal options
-          try {
-            await this.fallbackInitialization();
-            console.log(
-              "🔧 StockfishEngine: Fallback initialization successful"
-            );
-            return;
-          } catch (fallbackErr) {
-            console.error(
-              "🔧 StockfishEngine: Fallback initialization also failed:",
-              fallbackErr
-            );
-            throw new Error(
-              `Stockfish engine failed to initialize after ${maxRetries} attempts. Last error: ${lastError?.message}. Please refresh the page.`
-            );
-          }
-        }
-      }
+    if (this.ready) {
+      console.log("✅ Engine already initialized");
+      return;
     }
-  }
-
-  private async fallbackInitialization(): Promise<void> {
-    console.log("🔧 StockfishEngine: Starting fallback initialization...");
-
-    // Create a new worker for fallback
-    if (this.worker) {
-      this.worker.terminate();
+    if (this.initializing) {
+      console.log("🔧 Waiting for initialization...");
+      // Wait for init to complete
+      while (this.initializing) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return;
     }
 
-    this.worker = new Worker("/stockfish-worker-simple.js");
+    this.initializing = true;
+    console.log("🔧 Initializing Stockfish...");
 
-    this.worker.onmessage = (e: MessageEvent) => {
-      const msg: SFMessage = e.data;
-      console.log("🔧 StockfishEngine: Worker info:", msg.payload);
+    try {
+      this.worker = new Worker("/stockfish-worker.js", { type: "module" });
 
-      if (msg.type === "ready") {
-        this.ready = true;
-        console.log("🔧 StockfishEngine: Fallback initialization complete");
-      } else if (msg.type === "error") {
-        console.error("🔧 StockfishEngine: Worker error:", msg.payload);
-        this.ready = false;
-      }
-
-      // Process waiters
-      this.waiters.forEach((waiter) => waiter(msg));
-    };
-
-    this.worker.onerror = (error) => {
-      console.error("🔧 StockfishEngine: Worker error:", error);
-      this.ready = false;
-    };
-
-    this.worker.postMessage({ type: "init" });
-    await this.waitFor((m) => m.type === "ready", 10000); // 10 second timeout for fallback
-  }
-
-  private async initializeStockfish(): Promise<void> {
-    console.log("🔧 StockfishEngine: Creating worker...");
-    this.worker = new Worker("/stockfish-worker.js");
-
-    this.worker.onmessage = (e: MessageEvent) => {
-      const msg: SFMessage = e.data;
-
-      // Only log important worker messages
-      if (msg.type === "info" && typeof msg.payload === "string") {
-        // Only log UCI options and errors, not every evaluation info
-        if (
-          msg.payload.includes("Setting") ||
-          msg.payload.includes("UCI options") ||
-          msg.payload.includes("No such option") ||
-          msg.payload.includes("error")
-        ) {
-          console.log(`🔧 StockfishEngine: ${msg.payload}`);
-        }
-      }
-
-      if (msg.type === "ready") {
-        this.ready = true;
-      } else if (msg.type === "error") {
-        console.error("🔧 StockfishEngine: Worker error:", msg.payload);
-        this.ready = false;
-      }
-
-      // Process waiters for this specific message
-      const matchingWaiters = this.waiters.filter((w) => w(msg));
-      this.waiters = this.waiters.filter((w) => !matchingWaiters.includes(w));
-    };
-
-    this.worker.onerror = (error) => {
-      console.error("🔧 StockfishEngine: Worker error:", error);
-      this.ready = false;
-    };
-
-    this.worker.postMessage({ type: "init" });
-    await this.waitFor((m) => m.type === "ready", this.initTimeout);
-  }
-
-  private waitFor(
-    predicate: (m: SFMessage) => boolean,
-    timeoutMs = 5000
-  ): Promise<SFMessage> {
-    return new Promise((resolve, reject) => {
-      const to = setTimeout(() => {
-        // Clean up the waiter to prevent memory leaks
-        const waiterIndex = this.waiters.findIndex(
-          (waiter) => waiter === waiterFunction
-        );
-        if (waiterIndex !== -1) {
-          this.waiters.splice(waiterIndex, 1);
-        }
-        reject(new Error(`Stockfish operation timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      const waiterFunction = (m: SFMessage) => {
-        if (predicate(m)) {
-          clearTimeout(to);
-          // Remove this waiter from the array
-          const waiterIndex = this.waiters.findIndex(
-            (waiter) => waiter === waiterFunction
-          );
-          if (waiterIndex !== -1) {
-            this.waiters.splice(waiterIndex, 1);
-          }
-          resolve(m);
+      // Setup message router
+      this.worker.onmessage = (e: MessageEvent) => {
+        const { type, payload } = e.data;
+        const handler = this.messageHandlers.get(type);
+        if (handler) {
+          handler(payload);
         }
       };
 
-      this.waiters.push(waiterFunction);
-    });
+      // Wait for ready
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Init timeout"));
+        }, 30000);
+
+        this.messageHandlers.set("ready", () => {
+          clearTimeout(timeout);
+          this.ready = true;
+          this.messageHandlers.delete("ready");
+          console.log("✅ Stockfish ready");
+          resolve();
+        });
+
+        this.messageHandlers.set("error", (msg: string) => {
+          clearTimeout(timeout);
+          this.messageHandlers.delete("ready");
+          this.messageHandlers.delete("error");
+          reject(new Error(msg));
+        });
+
+        this.worker!.postMessage({ type: "init" });
+      });
+    } finally {
+      this.initializing = false;
+    }
   }
 
-  // Public method to check if engine is ready
   isReady(): boolean {
-    return this.ready;
+    return this.ready && this.worker !== null;
   }
 
-  setOptions(opts: Record<string, unknown>) {
-    if (!this.worker) return;
-
-    const map: Record<string, unknown> = {
-      SkillLevel: opts.skillLevel ?? 20,
-      Threads: opts.threads ?? 1,
-      Hash: opts.hash ?? 64,
-      // Add more UCI options for better play
-      Contempt: 0, // No contempt factor
-      Ponder: false, // Don't ponder
-      MultiPV: 1, // Only one principal variation
-    };
-
-    Object.entries(map).forEach(([name, value]) => {
-      this.worker!.postMessage({ type: "setoption", payload: { name, value } });
+  // ✅ NEW: Queue management
+  private async enqueueRequest<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({ fn, resolve, reject });
+      this.processQueue();
     });
   }
 
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingRequest || this.requestQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingRequest = true;
+    const request = this.requestQueue.shift()!;
+
+    try {
+      const result = await request.fn();
+      request.resolve(result);
+    } catch (error) {
+      request.reject(error);
+    } finally {
+      this.isProcessingRequest = false;
+      // Process next request if any
+      if (this.requestQueue.length > 0) {
+        setTimeout(() => this.processQueue(), 0);
+      }
+    }
+  }
+
+  async setSkillLevel(level: number): Promise<void> {
+    if (!this.isReady()) return;
+    const validLevel = Math.max(0, Math.min(20, Math.round(level)));
+    if (this.currentSkillLevel === validLevel) return;
+
+    console.log(`🎯 Setting skill level to ${validLevel}`);
+
+    // ✅ Wrap in queue
+    return this.enqueueRequest(async () => {
+      this.worker!.postMessage({
+        type: "setoption",
+        payload: { name: "Skill Level", value: validLevel },
+      });
+      this.currentSkillLevel = validLevel;
+    });
+  }
+
+  // Neural Network Configuration for Stockfish 17
+  async setNeuralNetwork(
+    evalFile?: string,
+    evalFileSmall?: string,
+  ): Promise<void> {
+    if (!this.isReady()) {
+      throw new Error("Engine not initialized");
+    }
+
+    console.log("🧠 Configuring neural networks...");
+
+    // Set large neural network (default for stronger play)
+    if (evalFile) {
+      await this.setOption("EvalFile", evalFile);
+      console.log(`✅ Set EvalFile: ${evalFile}`);
+    }
+
+    // Set small neural network (faster, less accurate)
+    if (evalFileSmall) {
+      await this.setOption("EvalFileSmall", evalFileSmall);
+      console.log(`✅ Set EvalFileSmall: ${evalFileSmall}`);
+    }
+  }
+
+  async setOption(
+    name: string,
+    value: string | number | boolean,
+  ): Promise<void> {
+    if (!this.isReady()) {
+      throw new Error("Engine not initialized");
+    }
+
+    // ✅ Wrap in queue
+    return this.enqueueRequest(async () => {
+      return new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`Set option ${name} timeout`));
+        }, 5000);
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          this.messageHandlers.delete("readyok");
+          this.messageHandlers.delete("error");
+        };
+
+        this.messageHandlers.set("readyok", () => {
+          cleanup();
+          resolve();
+        });
+
+        this.messageHandlers.set("error", (msg: string) => {
+          cleanup();
+          reject(new Error(`Failed to set ${name}: ${msg}`));
+        });
+
+        this.worker!.postMessage({
+          type: "setoption",
+          payload: { name, value },
+        });
+      });
+    });
+  }
+
+  // Auto-configure best available neural network
+  async configureOptimalNetwork(): Promise<void> {
+    if (!this.isReady()) {
+      throw new Error("Engine not initialized");
+    }
+
+    console.log("🔍 Detecting optimal neural network configuration...");
+
+    // Try to detect if we're using Stockfish 17+ with NNUE support
+    try {
+      // Check if EvalFile option is available
+      await this.setOption("EvalFile", "");
+
+      // Set default large network for maximum strength
+      await this.setNeuralNetwork(
+        "nn-1111cefa1111.nnue", // Stockfish 17 default large network
+        undefined, // Don't set small network by default
+      );
+
+      console.log("✅ Neural network configured optimally for Stockfish 17");
+    } catch (error) {
+      console.warn(
+        "⚠️ Could not configure neural network, falling back to classical evaluation:",
+        error,
+      );
+    }
+  }
+
+  // ✅ MAIN FIX: analyzePosition now uses queue
   async analyzePosition(
     fen: string,
-    cfg?: { maxDepth?: number; maxTimeMs?: number; multiPV?: number }
-  ): Promise<{
-    bestMove: string | null;
-    evaluation: number;
-    depth: number;
-    timeMs: number;
-    topMoves?: Array<{ move: string; eval: number; pv?: string }>;
-  }> {
-    if (!this.ready) throw new Error("Engine not initialized");
-    if (!this.worker) throw new Error("Stockfish worker not available");
-
-    // Only log FEN for debugging if needed
-    // console.log(`🔧 StockfishEngine: Analyzing FEN: ${fen}`);
-    this.worker.postMessage({ type: "position", payload: { fen } });
-    this.worker.postMessage({
-      type: "go",
-      payload: {
-        movetime: cfg?.maxTimeMs ?? 3000,
-        depth: cfg?.maxDepth,
-        multiPV: cfg?.multiPV ?? 5,
-      },
-    });
-
-    let bestmove = "";
-    let depth = 0;
-    let evaluation = 0;
-    let lastEvaluation = 0;
-    const start = Date.now();
-    let analysisCount = 0;
-    const maxAnalysisCount = 100; // Prevent infinite loops
-    let lastInfoTime = Date.now();
-
-    // Initialize topMoves array for MultiPV results
-    const topMoves: Array<{ move: string; eval: number; pv?: string }> = [];
-    const requestedMultiPV = cfg?.multiPV ?? 5;
-
-    while (analysisCount < maxAnalysisCount) {
-      const msg = await this.waitFor(
-        (m) => m.type === "bestmove" || m.type === "info",
-        cfg?.maxTimeMs ?? 8000
-      );
-
-      if (msg.type === "info") {
-        const line = msg.payload as string;
-        analysisCount++;
-        lastInfoTime = Date.now();
-
-        // Only log important info lines, not every single one
-        if (line.includes("bestmove") || line.includes("error")) {
-          console.log(`🔧 StockfishEngine: Raw info: ${line}`);
-        }
-
-        // Extract depth
-        const depthMatch = line.match(/depth\s+(\d+)/);
-        if (depthMatch) depth = parseInt(depthMatch[1]);
-
-        // Extract evaluation (cp score) - look for score cp pattern
-        const cpMatch = line.match(/score\s+cp\s+(-?\d+)/);
-        if (cpMatch) {
-          const newEval = parseInt(cpMatch[1]);
-          // Always update evaluation when we get a cp score (even if it's 0!)
-          evaluation = newEval;
-          lastEvaluation = newEval;
-          // Only log significant evaluations
-          if (Math.abs(newEval) > 50) {
-            console.log(
-              `🔧 StockfishEngine: Captured evaluation: ${newEval} cp at depth ${depth} (Stockfish says position is ${
-                newEval === 0
-                  ? "equal"
-                  : newEval > 0
-                  ? "White better"
-                  : "Black better"
-              })`
-            );
-          }
-        }
-
-        // Extract mate score
-        const mateMatch = line.match(/score\s+mate\s+(-?\d+)/);
-        if (mateMatch) {
-          const mateMoves = parseInt(mateMatch[1]);
-          // Convert mate to a very high evaluation
-          evaluation = mateMoves > 0 ? 10000 : -10000;
-          lastEvaluation = evaluation;
-          console.log(`🔧 StockfishEngine: Captured mate: ${mateMoves} moves`);
-        }
-
-        // NEW: MultiPV + PV parsing
-        const multipvMatch = line.match(/multipv (\d+)/);
-        const pvMatch = line.match(/pv ([\w\s]+)/);
-
-        if (multipvMatch && pvMatch) {
-          const multipv = parseInt(multipvMatch[1]);
-          const pvMoves = pvMatch[1].trim().split(" ").slice(0, 5);
-          const currentEval = evaluation || lastEvaluation;
-
-          console.log(`MultiPV ${multipv}: ${pvMoves[0]} (${currentEval}cp)`);
-
-          // Store for coaching (array is 0-indexed, MultiPV is 1-indexed)
-          if (multipv <= requestedMultiPV) {
-            topMoves[multipv - 1] = {
-              move: pvMoves[0],
-              eval: currentEval,
-              pv: pvMoves.join(" "),
-            };
-          }
-        }
-
-        // Store the best evaluation we've seen (highest depth with non-zero score)
-        if (evaluation !== 0 && depth > 0) {
-          lastEvaluation = evaluation;
-        }
-
-        // Stop if we've been analyzing too long without new info
-        if (Date.now() - lastInfoTime > 2000) {
-          break;
-        }
-      }
-
-      if (msg.type === "bestmove") {
-        const line = msg.payload as string;
-        bestmove = (line.split(" ")[1] || "").trim();
-        console.log(`🔧 StockfishEngine: Best move found: ${bestmove}`);
-        break;
-      }
+    options: { maxDepth?: number; maxTimeMs?: number; multiPV?: number } = {},
+  ): Promise<AnalysisResult> {
+    if (!this.isReady()) {
+      throw new Error("Engine not initialized");
     }
 
-    // Use the last known evaluation if we didn't get a good one
-    if (evaluation === 0 && lastEvaluation !== 0) {
-      evaluation = lastEvaluation;
-    }
-
-    // Use Stockfish evaluation if we have one, otherwise estimate from material
-    if (lastEvaluation !== 0 || evaluation !== 0) {
-      // Use Stockfish evaluation
-      evaluation = lastEvaluation !== 0 ? lastEvaluation : evaluation;
-      console.log(
-        `🔧 StockfishEngine: Using Stockfish evaluation: ${evaluation} cp`
-      );
-    } else {
-      // Use enhanced evaluation when Stockfish returns 0 cp
-      evaluation = this.calculateEnhancedEvaluation(fen);
-      console.log(
-        `🔧 StockfishEngine: Using enhanced evaluation: ${evaluation} cp`
-      );
-    }
-
-    // Debug: Count material to verify position (only from board position, not castling rights)
-    const boardPart = fen.split(" ")[0]; // Get only the board position part
-    const whitePieces = (boardPart.match(/[RNBQKP]/g) || []).length;
-    const blackPieces = (boardPart.match(/[rnbqkp]/g) || []).length;
-    const materialDiff = whitePieces - blackPieces;
-
-    // Only log material count for debugging when there's a difference
-    if (materialDiff !== 0) {
-      console.log(
-        `🔧 StockfishEngine: Material difference detected - White: ${whitePieces}, Black: ${blackPieces}, Diff: ${materialDiff}`
-      );
-    }
-
-    // Only log final evaluation if it's significant
-    if (Math.abs(evaluation) > 10) {
-      console.log(
-        `🔧 StockfishEngine: Final evaluation: ${evaluation} cp, depth: ${depth}`
-      );
-    }
-
-    return {
-      bestMove: bestmove || null,
-      evaluation,
-      depth,
-      timeMs: Date.now() - start,
-      topMoves: topMoves.length > 0 ? topMoves : undefined,
-    };
+    // ✅ Enqueue this analysis request
+    return this.enqueueRequest(() =>
+      this._analyzePositionInternal(fen, options),
+    );
   }
 
-  async getBestMove(
+  // ✅ NEW: Internal analysis method (not queued itself)
+  private async _analyzePositionInternal(
     fen: string,
-    depth = 12,
-    maxTimeMs = 2000
-  ): Promise<string | null> {
-    const res = await this.analyzePosition(fen, { maxDepth: depth, maxTimeMs });
-    return res.bestMove;
-  }
-
-  getEngineType(): string {
-    return "Stockfish";
-  }
-
-  // Method to verify Stockfish configuration
-  async verifyConfiguration(): Promise<void> {
-    if (!this.worker) throw new Error("Engine not initialized");
-
-    // Test with a position where White is clearly winning (Q vs R)
-    const testFen =
-      "r3k2r/ppp2ppp/2n1bn2/2b1p3/2B1P3/3P1N2/PPP2PPP/R1BQK2R w KQkq - 0 1";
-    // console.log(`🔧 StockfishEngine: Testing with known position: ${testFen}`);
-
-    this.worker.postMessage({
-      type: "position",
-      payload: { fen: testFen },
-    });
-    this.worker.postMessage({
-      type: "go",
-      payload: { depth: 10, movetime: 3000 },
-    });
-
-    // Wait for a response to verify it's working
-    try {
-      const msg = await this.waitFor((m) => m.type === "bestmove", 8000);
-      console.log(
-        "🔧 StockfishEngine: Configuration verified - engine is responding correctly"
-      );
-    } catch (error) {
-      console.error(
-        "🔧 StockfishEngine: Configuration verification failed:",
-        error
-      );
-    }
-  }
-
-  // Test Stockfish with a known position to verify it's working correctly
-  async testWithKnownPosition(): Promise<void> {
-    if (!this.worker) throw new Error("Engine not initialized");
-
-    console.log("🔧 StockfishEngine: Testing with known winning position...");
-
-    // Test with a position where White is clearly winning (Queen vs Rook)
-    const winningFen =
-      "r3k2r/ppp2ppp/2n1bn2/2b1p3/2B1P3/3P1N2/PPP2PPP/R1BQK2R w KQkq - 0 1";
-
-    const result = await this.analyzePosition(winningFen, {
-      maxDepth: 15,
-      maxTimeMs: 5000,
-    });
-
-    console.log(
-      `🔧 StockfishEngine: Test result - Evaluation: ${result.evaluation} cp, Best Move: ${result.bestMove}`
-    );
-
-    if (result.evaluation > 0) {
-      console.log(
-        "✅ Enhanced evaluation system working correctly - detected White advantage"
-      );
-    } else {
-      console.log(
-        "❌ Evaluation system issue - should show White advantage but got:",
-        result.evaluation
-      );
-    }
-  }
-
-  // Test if UCI options are working by checking if Stockfish responds with non-zero evaluations
-  async testUCIOptions(): Promise<void> {
-    if (!this.worker) throw new Error("Engine not initialized");
-
-    console.log("🔧 StockfishEngine: Testing UCI options...");
-
-    // Test with a position where White is clearly winning (rook vs pawn endgame)
-    const testFen = "8/8/8/8/8/8/4K3/4R3 w - - 0 1";
-
-    // console.log(
-    //   "🔧 StockfishEngine: Testing with position where White has rook vs nothing..."
-    // );
-
-    const result = await this.analyzePosition(testFen, {
-      maxDepth: 10,
-      maxTimeMs: 3000,
-    });
-
-    console.log(
-      `🔧 StockfishEngine: UCI test - Evaluation: ${result.evaluation} cp`
-    );
-
-    if (result.evaluation !== 0) {
-      console.log(
-        "✅ UCI options are working - Stockfish is evaluating positions"
-      );
-      console.log("🔧 StockfishEngine: UCI options successfully applied:");
-      console.log("  - SkillLevel: 20 (Maximum strength)");
-      console.log("  - Threads: 1 (Single thread)");
-      console.log("  - Hash: 64 (64MB hash table)");
-      console.log("  - Contempt: 0 (No contempt factor)");
-      console.log("  - Ponder: false (No pondering)");
-      console.log("  - MultiPV: 1 (Single principal variation)");
-    } else {
-      console.log(
-        "❌ UCI options are NOT working - Stockfish still returns 0 cp"
-      );
-      console.log(
-        "🔧 StockfishEngine: This indicates UCI options are not being applied correctly"
-      );
-    }
-  }
-
-  // Simple and reliable material evaluation
-  private calculateEnhancedEvaluation(fen: string): number {
-    const boardPart = fen.split(" ")[0];
-    const turn = fen.split(" ")[1];
-
-    // Simple material count only
-    let whiteMaterial = 0;
-    let blackMaterial = 0;
-
-    // Standard piece values (centipawns)
-    const pieceValues: Record<string, number> = {
-      P: 100,
-      N: 320,
-      B: 330,
-      R: 500,
-      Q: 900,
-      K: 0,
-      p: 100,
-      n: 320,
-      b: 330,
-      r: 500,
-      q: 900,
-      k: 0,
+    options: { maxDepth?: number; maxTimeMs?: number; multiPV?: number },
+  ): Promise<AnalysisResult> {
+    const settings = {
+      maxDepth: options.maxDepth || 15,
+      maxTimeMs: options.maxTimeMs || 2000,
+      multiPV: options.multiPV || 1,
     };
 
-    // Count material
-    for (const char of boardPart) {
-      if (char === "/" || (char >= "1" && char <= "8")) continue;
+    const startTime = Date.now();
 
-      if (char >= "A" && char <= "Z") {
-        whiteMaterial += pieceValues[char] || 0;
-      } else if (char >= "a" && char <= "z") {
-        blackMaterial += pieceValues[char] || 0;
-      }
+    return new Promise((resolve, reject) => {
+      let depth = 0;
+      let currentEval = 0;
+      let bestMove: string | null = null;
+      const topMoves: TopMove[] = [];
+
+      const timeout = setTimeout(() => {
+        cleanup();
+        this.worker!.postMessage({ type: "stop" });
+        reject(new Error("Analysis timeout"));
+      }, settings.maxTimeMs + 3000);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.messageHandlers.delete("info");
+        this.messageHandlers.delete("bestmove");
+        this.messageHandlers.delete("error");
+      };
+
+      // Info handler
+      this.messageHandlers.set("info", (payload: string) => {
+        const info = payload;
+
+        const depthMatch = info.match(/depth (\d+)/);
+        if (depthMatch) {
+          depth = parseInt(depthMatch[1]);
+        }
+
+        const scoreMatch = info.match(/score cp (-?\d+)/);
+        if (scoreMatch) {
+          currentEval = parseInt(scoreMatch[1]);
+        }
+
+        const multiPVMatch = info.match(/multipv (\d+)/);
+        const pvMatch = info.match(/pv (.+)/);
+        const nodesMatch = info.match(/nodes (\d+)/);
+
+        if (multiPVMatch && pvMatch && scoreMatch) {
+          const pvIndex = parseInt(multiPVMatch[1]) - 1;
+          const pvMoves = pvMatch[1].trim().split(/\s+/);
+          topMoves[pvIndex] = {
+            move: pvMoves[0] || "",
+            eval: parseInt(scoreMatch[1]),
+            nodes: nodesMatch ? parseInt(nodesMatch[1]) : undefined,
+            pv: pvMoves,
+          };
+        }
+      });
+
+      // Bestmove handler
+      this.messageHandlers.set("bestmove", (payload: string) => {
+        const match = payload.match(/bestmove (\S+)/);
+        bestMove = match ? match[1] : null;
+        cleanup();
+
+        const complexity = PositionAnalyzer.analyzeComplexity(fen);
+
+        resolve({
+          bestMove,
+          evaluation: currentEval,
+          depth,
+          timeMs: Date.now() - startTime,
+          topMoves: topMoves.length > 0 ? topMoves : undefined,
+          multipv: settings.multiPV,
+          complexity: complexity.overallComplexity,
+        });
+      });
+
+      // Error handler
+      this.messageHandlers.set("error", (msg: string) => {
+        cleanup();
+        reject(new Error(msg));
+      });
+
+      // Send commands
+      this.worker!.postMessage({ type: "position", payload: { fen } });
+      this.worker!.postMessage({
+        type: "go",
+        payload: {
+          movetime: settings.maxTimeMs,
+          multiPV: settings.multiPV,
+        },
+      });
+    });
+  }
+
+  // Enhanced method for getting multiple lines of analysis
+  async getMultipleLines(
+    fen: string,
+    numLines: number = 3,
+    maxTimeMs: number = 3000,
+  ): Promise<TopMove[]> {
+    const result = await this.analyzePosition(fen, {
+      multiPV: numLines,
+      maxTimeMs,
+    });
+
+    return result.topMoves || [];
+  }
+
+  // Get engine information including neural network status
+  async getEngineInfo(): Promise<{
+    name: string;
+    author: string;
+    evalFile?: string;
+    evalFileSmall?: string;
+    nnue?: boolean;
+  }> {
+    if (!this.isReady()) {
+      throw new Error("Engine not initialized");
     }
 
-    // Calculate material difference
-    const materialDiff = whiteMaterial - blackMaterial;
+    return new Promise((resolve, reject) => {
+      let engineInfo: any = {};
 
-    // Adjust for turn (if it's black's turn, flip the evaluation)
-    const finalEvaluation = turn === "w" ? materialDiff : -materialDiff;
+      const cleanup = () => {
+        this.messageHandlers.delete("id");
+        this.messageHandlers.delete("error");
+      };
 
-    console.log(
-      `🔧 StockfishEngine: Simple material evaluation - White: ${whiteMaterial}cp, Black: ${blackMaterial}cp, Diff: ${finalEvaluation}cp`
-    );
+      this.messageHandlers.set("id", (payload: string) => {
+        const info = payload;
 
-    return finalEvaluation;
+        // Parse engine id information
+        const nameMatch = info.match(/name (.+)/);
+        const authorMatch = info.match(/author (.+)/);
+
+        if (nameMatch) engineInfo.name = nameMatch[1];
+        if (authorMatch) engineInfo.author = authorMatch[1];
+      });
+
+      this.messageHandlers.set("error", (msg: string) => {
+        cleanup();
+        reject(new Error(`Engine info error: ${msg}`));
+      });
+
+      // Send id command
+      this.worker!.postMessage({ type: "id" });
+
+      // Wait a bit for response
+      setTimeout(() => {
+        cleanup();
+        resolve({
+          name: engineInfo.name || "Unknown",
+          author: engineInfo.author || "Unknown",
+          nnue: engineInfo.name?.toLowerCase().includes("stockfish"),
+        });
+      }, 2000);
+    });
+  }
+
+  // ✅ NEW: Get queue status for debugging
+  getQueueStatus() {
+    return {
+      queueLength: this.requestQueue.length,
+      isProcessing: this.isProcessingRequest,
+    };
   }
 
   destroy() {

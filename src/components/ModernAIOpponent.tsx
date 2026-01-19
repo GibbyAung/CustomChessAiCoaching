@@ -1,117 +1,173 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import { useChess } from "@/contexts/ChessContext";
-import { stockfishCoaching } from "@/lib/stockfish-coaching";
-import { GameMode } from "@/types/game-modes";
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useChess } from '@/contexts/ChessContext';
+import { GameMode } from '@/types/game-modes';
+import { Square } from 'chess.js';
 
 interface ModernAIOpponentProps {
   isEnabled: boolean;
   gameMode: GameMode;
-  difficulty: "easy" | "medium" | "hard";
+  difficulty: 'easy' | 'medium' | 'hard';
   autoPlay: boolean;
 }
 
-export function ModernAIOpponent({
-  isEnabled,
-  gameMode,
-  difficulty,
-  autoPlay,
+export function ModernAIOpponent({ 
+  isEnabled, 
+  gameMode, 
+  difficulty, 
+  autoPlay 
 }: ModernAIOpponentProps) {
   const { gameState, makeMove } = useChess();
   const [isThinking, setIsThinking] = useState(false);
   const [lastMove, setLastMove] = useState<string | null>(null);
+  
+  // ✅ Use ref to prevent duplicate processing and stale closures
+  const isProcessingRef = useRef(false);
+  const lastProcessedFenRef = useRef<string>('');
 
-  // Get difficulty settings
-  const getDifficultySettings = () => {
+  const getDifficultySettings = useCallback(() => {
     switch (difficulty) {
-      case "easy":
-        return { maxDepth: 8, maxTimeMs: 500 };
-      case "medium":
-        return { maxDepth: 12, maxTimeMs: 1000 };
-      case "hard":
-        return { maxDepth: 16, maxTimeMs: 2000 };
-      default:
-        return { maxDepth: 12, maxTimeMs: 1000 };
+      case 'easy': 
+        return { maxDepth: 8, maxTimeMs: 500, skillLevel: 5 };
+      case 'medium': 
+        return { maxDepth: 12, maxTimeMs: 1000, skillLevel: 12 };
+      case 'hard': 
+        return { maxDepth: 16, maxTimeMs: 2000, skillLevel: 20 };
+      default: 
+        return { maxDepth: 12, maxTimeMs: 1000, skillLevel: 12 };
     }
-  };
+  }, [difficulty]);
 
-  // Check if it's AI's turn
-  const isAITurn = () => {
-    return gameState.turn === "b" && !gameState.isGameOver;
-  };
+  // ✅ CRITICAL FIX: Proper AI move with initialization check
+  const makeAIMove = useCallback(async () => {
+    // Prevent duplicate processing
+    if (isProcessingRef.current) {
+      console.log('🤖 [AI] Already processing, skipping...');
+      return;
+    }
 
-  // Make AI move
-  const makeAIMove = async () => {
-    if (!isEnabled || !isAITurn() || isThinking) return;
+    // Check if it's AI's turn (black to move)
+    if (gameState.turn !== 'b' || gameState.isGameOver) {
+      console.log('🤖 [AI] Not AI turn or game over');
+      return;
+    }
 
+    // Check if already processed this position
+    if (lastProcessedFenRef.current === gameState.fen) {
+      console.log('🤖 [AI] Already processed this FEN');
+      return;
+    }
+
+    console.log('🤖 [AI] Starting move calculation for:', gameState.fen);
+    
+    isProcessingRef.current = true;
+    lastProcessedFenRef.current = gameState.fen;
     setIsThinking(true);
+
     try {
       const settings = getDifficultySettings();
-      const analysis = await stockfishCoaching.analyzePosition(
-        gameState.fen,
-        settings
-      );
+      
+      // ✅ Dynamic import for code splitting
+      const { stockfishEngine } = await import('@/lib/stockfish-engine');
 
-      if (analysis.bestMove) {
-        // Add a small delay to make the AI feel more natural
-        await new Promise((resolve) => setTimeout(resolve, 300));
-
-        // Parse Stockfish move (e.g., "e2e4") into from and to squares
-        const from = analysis.bestMove.slice(0, 2) as any;
-        const to = analysis.bestMove.slice(2, 4) as any;
-
-        const success = makeMove(from, to);
-        if (success) {
-          setLastMove(analysis.bestMove);
-        }
+      // ✅ CRITICAL: Ensure engine is initialized
+      if (!stockfishEngine.isReady()) {
+        console.log('🤖 [AI] Engine not ready, initializing...');
+        await stockfishEngine.initialize();
       }
+
+      // ✅ Set skill level based on difficulty
+      await stockfishEngine.setSkillLevel(settings.skillLevel);
+
+      // ✅ Analyze position
+      console.log('🤖 [AI] Analyzing at depth:', settings.maxDepth);
+      const analysis = await stockfishEngine.analyzePosition(gameState.fen, {
+        maxDepth: settings.maxDepth,
+        maxTimeMs: settings.maxTimeMs,
+        multiPV: 1,
+      });
+
+      if (!analysis.bestMove) {
+        console.error('🤖 [AI] No best move found!');
+        return;
+      }
+
+      console.log('🤖 [AI] Best move found:', analysis.bestMove);
+
+      // ✅ Parse UCI move: "e2e4" or "e7e8q" (with promotion)
+      const from = analysis.bestMove.slice(0, 2) as Square;
+      const to = analysis.bestMove.slice(2, 4) as Square;
+      const promotion = analysis.bestMove.length > 4 
+        ? analysis.bestMove.slice(4, 5) 
+        : undefined;
+
+      // ✅ Execute the move
+      const success = makeMove(from, to, promotion);
+
+      if (success) {
+        setLastMove(analysis.bestMove);
+        console.log('✅ [AI] Move executed:', analysis.bestMove);
+      } else {
+        console.error('❌ [AI] Move failed:', from, to, promotion);
+        // Reset processing on failure
+        lastProcessedFenRef.current = '';
+      }
+
     } catch (error) {
-      console.error("AI move failed:", error);
+      console.error('❌ [AI] Error:', error);
+      // Reset on error
+      lastProcessedFenRef.current = '';
     } finally {
       setIsThinking(false);
+      isProcessingRef.current = false;
     }
-  };
+  }, [gameState.fen, gameState.turn, gameState.isGameOver, getDifficultySettings, makeMove]);
 
-  // Auto-play effect
+  // ✅ CRITICAL FIX: Trigger AI move on turn change
   useEffect(() => {
-    if (isEnabled && autoPlay && isAITurn() && !isThinking) {
+    // Only trigger in AI opponent modes
+    if (!isEnabled || (gameMode !== 'ai_opponent' && gameMode !== 'ai_coaching')) {
+      return;
+    }
+
+    // Check if it's AI's turn
+    if (gameState.turn === 'b' && !gameState.isGameOver && !isThinking) {
+      console.log('🎯 [AI] Turn changed, scheduling AI move...');
+      
+      // Small delay for smoother UX
       const timer = setTimeout(() => {
         makeAIMove();
-      }, 500);
+      }, 300);
+
       return () => clearTimeout(timer);
     }
-  }, [gameState.fen, isEnabled, autoPlay, isAITurn(), isThinking]);
+  }, [gameState.turn, gameState.fen, gameState.isGameOver, isEnabled, gameMode, isThinking, makeAIMove]);
 
-  // Manual AI move for non-auto-play modes
+  // ✅ Reset processing ref on game reset
   useEffect(() => {
-    if (isEnabled && !autoPlay && isAITurn() && !isThinking) {
-      // In coaching mode, don't auto-move - let the user decide
-      if (gameMode === "ai_coaching") return;
-
-      // In other modes, prompt for AI move
-      if (gameMode === "ai_opponent") {
-        makeAIMove();
-      }
+    if (gameState.fen === 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1') {
+      lastProcessedFenRef.current = '';
+      isProcessingRef.current = false;
     }
-  }, [gameState.fen, isEnabled, autoPlay, gameMode, isAITurn(), isThinking]);
+  }, [gameState.fen]);
 
-  // Show AI status
   if (!isEnabled) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
       {isThinking && (
-        <div className="bg-blue-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
-          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-medium">AI thinking...</span>
+        <div className="flex items-center gap-2">
+          <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            AI thinking...
+          </span>
         </div>
       )}
-
       {lastMove && !isThinking && (
-        <div className="bg-green-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg">
-          <span className="text-sm font-medium">AI played: {lastMove}</span>
-        </div>
+        <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+          AI played: {lastMove}
+        </span>
       )}
     </div>
   );

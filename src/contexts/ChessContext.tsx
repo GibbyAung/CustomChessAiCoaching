@@ -1,7 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useReducer, useEffect } from "react";
-import { ChessGame, GameState } from "@/lib/chess";
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from "react";
+import { ChessGame } from "@/lib/chess";
+import { GameState } from "@/types/chess-engine";
 import { Square } from "chess.js";
 
 interface ChessContextType {
@@ -64,13 +65,16 @@ export const ChessProvider: React.FC<{ children: React.ReactNode }> = ({
     gameState: new ChessGame().getGameState(),
   });
 
-  const makeMove = (from: Square, to: Square, promotion?: string): boolean => {
+  const makeMove = useCallback((from: Square, to: Square, promotion?: string): boolean => {
+    // Make the move
     const moveSuccess = state.game.makeMove(from, to, promotion);
+    
     if (moveSuccess) {
       dispatch({ type: "MAKE_MOVE", from, to, promotion });
     }
+    
     return moveSuccess;
-  };
+  }, [state.game]);
 
   const resetGame = () => {
     dispatch({ type: "RESET_GAME" });

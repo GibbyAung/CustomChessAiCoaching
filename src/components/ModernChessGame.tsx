@@ -5,7 +5,7 @@ import { ChessProvider } from "@/contexts/ChessContext";
 import { ChessEngineProvider } from "@/contexts/ChessEngineContext";
 import dynamic from "next/dynamic";
 import { GameMode, GAME_MODES } from "@/types/game-modes";
-import { stockfishCoaching } from "@/lib/stockfish-coaching";
+
 import { gameSessionManager } from "@/lib/game-session-manager";
 import { GameOperations } from "@/lib/game-operations";
 import { UnifiedGameControls } from "@/components/UnifiedGameControls";
@@ -20,20 +20,20 @@ import { useCoaching } from "@/contexts/CoachingContext";
 // Dynamic imports for better performance
 const ChessBoard = dynamic(
   () => import("@/components/ChessBoard").then((m) => m.ChessBoard),
-  { ssr: false }
+  { ssr: false },
 );
 const ModernEvaluationBar = dynamic(
   () => import("@/components/ModernEvaluationBar"),
-  { ssr: false }
+  { ssr: false },
 );
 const GameModeSelector = dynamic(
   () => import("@/components/GameModeSelector"),
-  { ssr: false }
+  { ssr: false },
 );
 // CoachingInsights removed - functionality integrated into AdvancedCoachingToaster
 const ModernAIOpponent = dynamic(
   () => import("@/components/ModernAIOpponent").then((m) => m.ModernAIOpponent),
-  { ssr: false }
+  { ssr: false },
 );
 
 // AIRobotCoach component removed - replaced with modern toaster system
@@ -74,14 +74,49 @@ function ChessGameContent({
   // Update coaching position when game state changes
   useEffect(() => {
     if (gameState.fen) {
-      // Determine if the last move was made by human
-      // In AI opponent mode, if it's white's turn, the last move was by black (AI)
-      // If it's black's turn, the last move was by white (human)
-      const isHumanMove =
-        selectedMode === "practice" ||
-        (selectedMode === "ai_opponent" && gameState.turn === "w");
+      // Always analyze moves in practice and analysis modes
+      // In AI opponent mode, only analyze human moves
+      let isHumanMove = true; // Default to true for practice/analysis modes
 
-      updatePosition(gameState.fen, gameState.lastMove, isHumanMove);
+      if (selectedMode === "ai_opponent") {
+        // In AI opponent mode:
+        // If it's black's turn, last move was by white (human) = analyze
+        // If it's white's turn, last move was by black (AI) = skip
+        isHumanMove = gameState.turn === "b"; // Black to move = last move was by white (human) = analyze
+      } else if (selectedMode === "ai_coaching") {
+        // In AI coaching mode, analyze all moves to provide feedback
+        isHumanMove = true;
+      }
+
+      console.log("🧠 [CoachingContext] Move analysis:", {
+        lastMove: gameState.lastMove,
+        isHumanMove,
+        currentTurn: gameState.turn,
+        gameMode: selectedMode,
+        willAnalyze: isHumanMove && !!gameState.lastMove,
+      });
+
+      // ✅ ALTERNATIVE FIX: Only analyze when we have a move and it meets the human move criteria
+      // Add delay to prevent conflicts with AI thinking
+      if (gameState.lastMove && isHumanMove) {
+        console.log(
+          "📊 [CoachingContext] Analyzing human move:",
+          gameState.lastMove,
+        );
+
+        // Wait a bit to ensure AI isn't using Stockfish
+        setTimeout(() => {
+          try {
+            updatePosition(gameState.fen, gameState.lastMove, isHumanMove);
+          } catch (err: any) {
+            console.error("❌ [CoachingContext] Coaching error:", err);
+          }
+        }, 500); // Delay to avoid conflict
+      } else if (!gameState.lastMove) {
+        console.log("🚫 [CoachingContext] Skipping analysis - no lastMove");
+      } else {
+        console.log("🚫 [CoachingContext] Skipping coaching - AI move");
+      }
     }
   }, [
     gameState.fen,
@@ -332,7 +367,7 @@ function ChessGameContent({
                   onClick={() => setShowGameModes(false)}
                   size="sm"
                   variant="outline"
-                  className="bg-white/10 backdrop-blur-sm border border-white/20 text-shadow-gray-900 hover:bg-white/20"
+                  className="bg-white/10 backdrop-blur-sm border border-white/20 text-white hover:bg-white/20"
                 >
                   ✕
                 </Button>
@@ -376,7 +411,7 @@ function ChessGameContent({
                             {difficulty.charAt(0).toUpperCase() +
                               difficulty.slice(1)}
                           </Button>
-                        )
+                        ),
                       )}
                     </div>
                     <div className="text-xs text-gray-300 bg-white/5 rounded px-2 py-1.5">
@@ -546,7 +581,7 @@ function ChessGameContent({
 export function ModernChessGame() {
   const [selectedMode, setSelectedMode] = useState<GameMode>("practice");
   const [aiDifficulty, setAiDifficulty] = useState<"easy" | "medium" | "hard">(
-    "medium"
+    "medium",
   );
   const [showGameModes, setShowGameModes] = useState(false);
   const [showGameMenu, setShowGameMenu] = useState(false);
@@ -555,10 +590,38 @@ export function ModernChessGame() {
 
   const currentMode = GAME_MODES[selectedMode];
 
-  // Initialize Stockfish coaching when needed
+  // Initialize engine when component mounts and mode changes
   useEffect(() => {
-    if (currentMode.showEvaluation || currentMode.showThinking) {
-      stockfishCoaching.initialize().catch(console.error);
+    console.log(
+      "🚀 [ModernChessGame] Initializing engine for mode:",
+      currentMode,
+    );
+
+    // Initialize engine if evaluation or coaching is needed
+    if (
+      currentMode.showEvaluation ||
+      currentMode.showThinking ||
+      currentMode.name.includes("Coaching")
+    ) {
+      const initializeEngine = async () => {
+        try {
+          console.log("🔧 [ModernChessGame] Loading stockfish engine...");
+          const { stockfishEngine } = await import("@/lib/stockfish-engine");
+          if (!stockfishEngine.isReady()) {
+            await stockfishEngine.initialize();
+            console.log("✅ [ModernChessGame] Engine initialized successfully");
+          } else {
+            console.log("✅ [ModernChessGame] Engine already ready");
+          }
+        } catch (error) {
+          console.error(
+            "❌ [ModernChessGame] Engine initialization failed:",
+            error,
+          );
+        }
+      };
+
+      initializeEngine();
     }
   }, [currentMode]);
 

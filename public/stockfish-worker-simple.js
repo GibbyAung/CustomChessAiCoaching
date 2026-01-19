@@ -16,9 +16,27 @@ async function init() {
   try {
     log("Simple init start");
 
-    // Load Stockfish WASM module
-    const module = await import("/engine/sf171-79.js");
-    stockfish = await module.default();
+    // Load Stockfish WASM module - try different versions
+    let module;
+    try {
+      module = await import("/engine/sf171-79.js");
+      stockfish = await module.default();
+      log("Stockfish 17.1-79 loaded");
+    } catch (err1) {
+      try {
+        module = await import("/engine/sf16-7.js");
+        stockfish = await module.default();
+        log("Stockfish 16-7 loaded as fallback");
+      } catch (err2) {
+        try {
+          module = await import("/engine/fsf14.js");
+          stockfish = await module.default();
+          log("Stockfish 14 loaded as final fallback");
+        } catch (err3) {
+          throw new Error(`All engine versions failed: ${err1.message}, ${err2.message}, ${err3.message}`);
+        }
+      }
+    }
 
     log("Stockfish module loaded");
 
@@ -111,7 +129,21 @@ self.onmessage = function (e) {
       const { fen, depth, time } = payload;
       log(`Setting position: ${fen}`);
       stockfish.uci(`position fen ${fen}`);
-      stockfish.uci(`go depth ${depth} movetime ${time}`);
+      
+      // ✅ CRITICAL FIX: Use ONLY movetime for timed searches - NO DEPTH PARAMETER
+      if (time && time > 0) {
+        stockfish.uci(`go movetime ${time}`);
+        log('🚀 Starting timed search: ' + time + 'ms');
+      } else if (depth && depth > 0) {
+        // ✅ Limit depth for safety to prevent infinite search
+        const safeDepth = Math.min(depth, 20); // Cap at depth 20
+        stockfish.uci(`go depth ${safeDepth}`);
+        log('🔍 Starting depth search: ' + safeDepth + ' (capped from ' + depth + ')');
+      } else {
+        // Default fallback to prevent infinite search
+        stockfish.uci('go depth 15');
+        log('🔍 Starting default depth search: 15');
+      }
       break;
 
     case "stop":

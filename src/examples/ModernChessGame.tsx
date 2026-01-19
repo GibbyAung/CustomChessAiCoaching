@@ -4,7 +4,7 @@
 import React from "react";
 import { SmartToastDisplay } from "@/components/SmartToastDisplay";
 import { CoachingSettingsPanel } from "@/components/CoachingSettings";
-import { stockfishCoaching } from "@/lib/stockfish-coaching";
+import { stockfishEngine } from "@/lib/stockfish-engine";
 
 export function ModernChessGame() {
   // Your existing game state
@@ -20,7 +20,7 @@ export function ModernChessGame() {
 
     // Show coaching feedback (with built-in deduplication)
     if (game) {
-      await stockfishCoaching.analyzeAndShowFeedback(game.fen(), move);
+      await stockfishEngine.analyzePosition(game.fen(), {maxTimeMs: 2000});
     }
   };
 
@@ -47,14 +47,14 @@ export function ExistingChessComponent() {
   // Add these imports to your existing component
   // import { SmartToastDisplay } from "@/components/SmartToastDisplay";
   // import { CoachingSettingsPanel } from "@/components/CoachingSettings";
-  // import { stockfishCoaching } from "@/lib/stockfish-coaching";
+  // import { stockfishEngine } from "@/lib/stockfish-engine";
 
   // Add this to your existing move handler
   const existingMoveHandler = async (move: string, fen: string) => {
     // ... your existing move logic
 
     // Add this line for coaching feedback
-    await stockfishCoaching.analyzeAndShowFeedback(fen, move);
+    await stockfishEngine.analyzePosition(fen, {maxTimeMs: 2000});
   };
 
   // Add these to your JSX return statement

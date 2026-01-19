@@ -109,14 +109,13 @@ class Analytics {
     this.setupActivityTracking();
 
     this.isInitialized = true;
-    console.log("Analytics initialized for session:", this.sessionId);
   }
 
   private measurePageLoadTime(): number {
     if (typeof window === "undefined") return 0;
 
     const navigation = performance.getEntriesByType(
-      "navigation"
+      "navigation",
     )[0] as PerformanceNavigationTiming;
     return navigation ? navigation.loadEventEnd - navigation.loadEventStart : 0;
   }
@@ -131,13 +130,13 @@ class Analytics {
     ["mousedown", "mousemove", "keypress", "scroll", "touchstart"].forEach(
       (event) => {
         window.addEventListener(event, updateActivity, { passive: true });
-      }
+      },
     );
   }
 
   public trackEvent(
     type: GameEvent["type"],
-    data: Record<string, any> = {}
+    data: Record<string, any> = {},
   ): void {
     const event: GameEvent = {
       type,
@@ -151,11 +150,6 @@ class Analytics {
 
     // Update session data based on event type
     this.updateSessionData(event);
-
-    // Log to console in development
-    if (process.env.NODE_ENV === "development") {
-      console.log("Analytics Event:", event);
-    }
 
     // Store in localStorage for persistence
     this.persistData();
@@ -191,7 +185,7 @@ class Analytics {
   public trackPerformance(
     type: PerformanceMetric["type"],
     value: number,
-    unit: string = "ms"
+    unit: string = "ms",
   ): void {
     const metric: PerformanceMetric = {
       type,
@@ -204,7 +198,7 @@ class Analytics {
     this.performanceMetrics.push(metric);
 
     if (process.env.NODE_ENV === "development") {
-      console.log("Performance Metric:", metric);
+      // console.log(`Performance Metric:`, metric);
     }
   }
 
@@ -214,15 +208,15 @@ class Analytics {
     try {
       localStorage.setItem(
         "chess_analytics_session",
-        JSON.stringify(this.session)
+        JSON.stringify(this.session),
       );
       localStorage.setItem(
         "chess_analytics_events",
-        JSON.stringify(this.events.slice(-100))
+        JSON.stringify(this.events.slice(-100)),
       ); // Keep last 100 events
       localStorage.setItem(
         "chess_analytics_performance",
-        JSON.stringify(this.performanceMetrics.slice(-50))
+        JSON.stringify(this.performanceMetrics.slice(-50)),
       ); // Keep last 50 metrics
     } catch (error) {
       console.warn("Failed to persist analytics data:", error);
@@ -255,13 +249,16 @@ class Analytics {
     > = {};
 
     // Group metrics by type
-    const metricsByType = this.performanceMetrics.reduce((acc, metric) => {
-      if (!acc[metric.type]) {
-        acc[metric.type] = [];
-      }
-      acc[metric.type].push(metric.value);
-      return acc;
-    }, {} as Record<string, number[]>);
+    const metricsByType = this.performanceMetrics.reduce(
+      (acc, metric) => {
+        if (!acc[metric.type]) {
+          acc[metric.type] = [];
+        }
+        acc[metric.type].push(metric.value);
+        return acc;
+      },
+      {} as Record<string, number[]>,
+    );
 
     // Calculate summary for each metric type
     Object.entries(metricsByType).forEach(([type, values]) => {
@@ -287,7 +284,7 @@ class Analytics {
         exportTimestamp: Date.now(),
       },
       null,
-      2
+      2,
     );
   }
 

@@ -1,5 +1,6 @@
 import { Chess, Move, Square } from "chess.js";
 import { GameState } from "@/types/chess-engine";
+import type { EngineAnalysis } from "@/lib/engine/interface";
 
 export class ChessGame {
   private chess: Chess;
@@ -8,7 +9,18 @@ export class ChessGame {
     this.chess = new Chess(fen);
   }
 
-  getGameState(): GameState {
+  getGameState(): GameState & { lastMove?: string } {
+    const history = this.chess.history({ verbose: true });
+    const lastMove = history.length > 0 ? history[history.length - 1] : undefined;
+    const lastMoveStr = lastMove ? `${lastMove.from}${lastMove.to}${lastMove.promotion || ''}` : undefined;
+    
+    console.log("♟️ [ChessGame] getGameState:", {
+      fen: this.chess.fen(),
+      historyLength: history.length,
+      lastMove: lastMoveStr,
+      lastMoveVerbose: lastMove
+    });
+    
     return {
       fen: this.chess.fen(),
       isGameOver: this.chess.isGameOver(),
@@ -18,6 +30,7 @@ export class ChessGame {
       isDraw: this.chess.isDraw(),
       turn: this.chess.turn(),
       moveHistory: this.chess.history({ verbose: true }),
+      lastMove: lastMoveStr,
     };
   }
 
