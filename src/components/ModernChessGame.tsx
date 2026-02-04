@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ChessProvider } from "@/contexts/ChessContext";
 import { ChessEngineProvider } from "@/contexts/ChessEngineContext";
 import dynamic from "next/dynamic";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useChess } from "@/contexts/ChessContext";
 import { useCoaching } from "@/contexts/CoachingContext";
+import { Square } from "chess.js";
 
 // Dynamic imports for better performance
 const ChessBoard = dynamic(
@@ -69,7 +70,16 @@ function ChessGameContent({
   currentMode: any;
 }) {
   const { resetGame, undoMove, flipBoard, gameState } = useChess();
-  const { updatePosition } = useCoaching();
+  const { updatePosition, setDifficulty } = useCoaching();
+  const [hintArrows, setHintArrows] = useState<
+    Array<{ startSquare: Square; endSquare: Square; color: string }>
+  >([]);
+  const lastHintFenRef = useRef<string>("");
+  const hintRequestRef = useRef<number>(0);
+
+  useEffect(() => {
+    setDifficulty(aiDifficulty);
+  }, [aiDifficulty, setDifficulty]);
 
   // Update coaching position when game state changes
   useEffect(() => {
@@ -124,6 +134,99 @@ function ChessGameContent({
     gameState.turn,
     selectedMode,
     updatePosition,
+  ]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const updateHintArrows = async () => {
+      if (selectedMode !== "ai_coaching" || aiDifficulty !== "easy") {
+        if (hintArrows.length > 0) {
+          console.log("🧹 [Coaching] Clearing hint arrows (mode/difficulty)");
+          setHintArrows([]);
+        }
+        return;
+      }
+
+      if (gameState.isGameOver) {
+        console.log("🏁 [Coaching] Clearing hint arrows (game over)");
+        setHintArrows([]);
+        return;
+      }
+
+      const sessionColor = gameSessionManager.getUserColor();
+      const userColor = sessionColor ?? "white";
+      const isUserTurn =
+        (userColor === "white" && gameState.turn === "w") ||
+        (userColor === "black" && gameState.turn === "b");
+
+      if (!isUserTurn) {
+        console.log("⏳ [Coaching] Waiting for user turn, clearing hints");
+        setHintArrows([]);
+        return;
+      }
+
+      if (lastHintFenRef.current === gameState.fen) {
+        console.log("🔁 [Coaching] Hint arrows already computed for FEN");
+        return;
+      }
+
+      lastHintFenRef.current = gameState.fen;
+      hintRequestRef.current += 1;
+      const requestId = hintRequestRef.current;
+
+      try {
+        const { stockfishEngine } = await import("@/lib/stockfish-engine");
+        if (!stockfishEngine.isReady()) {
+          await stockfishEngine.initialize();
+        }
+
+        const topMoves = await stockfishEngine.getMultipleLines(
+          gameState.fen,
+          3,
+          800,
+        );
+
+        console.log("🧭 [Coaching] Top moves for hints:", topMoves);
+
+        if (!isActive || hintRequestRef.current !== requestId) {
+          return;
+        }
+
+        const hintColors = [
+          "rgba(34, 197, 94, 0.9)",
+          "rgba(59, 130, 246, 0.85)",
+          "rgba(249, 115, 22, 0.85)",
+        ];
+
+        const arrows = topMoves
+          .filter((move) => move.move && move.move.length >= 4)
+          .slice(0, 3)
+          .map((move, index) => ({
+            startSquare: move.move.slice(0, 2) as Square,
+            endSquare: move.move.slice(2, 4) as Square,
+            color: hintColors[index] ?? hintColors[0],
+          }));
+
+        console.log("🏹 [Coaching] Hint arrows computed:", arrows);
+        setHintArrows(arrows);
+      } catch (error) {
+        console.error("❌ [Coaching] Failed to fetch hint arrows:", error);
+      }
+    };
+
+    updateHintArrows();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    selectedMode,
+    aiDifficulty,
+    gameState.fen,
+    gameState.turn,
+    gameState.isGameOver,
+    hintArrows.length,
   ]);
 
   return (
@@ -254,7 +357,11 @@ function ChessGameContent({
             </div>
             {/* Chess Board - Fixed position, never moves */}
             <div className="flex-shrink-0 w-[480px]">
-              <ChessBoard width={480} showMoveHistory={true} />
+              <ChessBoard
+                width={480}
+                showMoveHistory={true}
+                hintArrows={hintArrows}
+              />
             </div>
           </div>
         </div>

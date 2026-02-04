@@ -9,7 +9,7 @@ import React, {
   useRef,
 } from "react";
 import { coachingManager } from "../lib/coaching-manager";
-import { generateHumanCoaching } from "../lib/human-coaching";
+import { AIDifficulty } from "@/types/game-modes";
 import { useToast } from "./ToastContext";
 
 interface CoachingContextType {
@@ -18,9 +18,11 @@ interface CoachingContextType {
   currentFen: string;
   lastMove?: string;
   isLastMoveHuman: boolean;
+  difficulty: AIDifficulty;
   enableCoaching: () => void;
   disableCoaching: () => void;
   setMode: (mode: "coaching" | "ai_opponent") => void;
+  setDifficulty: (difficulty: AIDifficulty) => void;
   updatePosition: (fen: string, lastMove?: string, isHuman?: boolean) => void;
 }
 
@@ -31,6 +33,7 @@ const CoachingContext = createContext<CoachingContextType | undefined>(
 export function CoachingProvider({ children }: { children: React.ReactNode }) {
   const [isEnabled, setIsEnabled] = useState(true);
   const [mode, setMode] = useState<"coaching" | "ai_opponent">("coaching");
+  const [difficulty, setDifficultyState] = useState<AIDifficulty>("medium");
   const [currentFen, setCurrentFen] = useState("");
   const [lastMove, setLastMove] = useState<string | undefined>(undefined);
   const [isLastMoveHuman, setIsLastMoveHuman] = useState(true);
@@ -46,6 +49,11 @@ export function CoachingProvider({ children }: { children: React.ReactNode }) {
 
   const disableCoaching = useCallback(() => {
     setIsEnabled(false);
+  }, []);
+
+  const setDifficulty = useCallback((nextDifficulty: AIDifficulty) => {
+    setDifficultyState(nextDifficulty);
+    coachingManager.setDifficulty(nextDifficulty);
   }, []);
 
   const updatePosition = useCallback(
@@ -124,9 +132,11 @@ export function CoachingProvider({ children }: { children: React.ReactNode }) {
     currentFen,
     lastMove,
     isLastMoveHuman,
+    difficulty,
     enableCoaching,
     disableCoaching,
     setMode,
+    setDifficulty,
     updatePosition,
   };
 

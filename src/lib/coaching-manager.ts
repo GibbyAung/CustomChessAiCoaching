@@ -3,6 +3,7 @@
 import { stockfishEngine } from "./stockfish-engine";
 import { PositionAnalyzer, ComplexityFactors } from "./position-analyzer";
 import { generateHumanCoaching } from "./human-coaching";
+import { AIDifficulty } from "@/types/game-modes";
 
 export interface MoveEvaluation {
   fen: string;
@@ -33,10 +34,17 @@ export class CoachingManager {
 
   private lastFeedbackTime = 0;
   private readonly FEEDBACK_COOLDOWN = 800;
+  private lastHintTime = 0;
+  private readonly HINT_COOLDOWN = 12000;
+  private difficulty: AIDifficulty = "medium";
   private toastCallback: ToastCallback | null = null;
 
   setToastCallback(callback: ToastCallback) {
     this.toastCallback = callback;
+  }
+
+  setDifficulty(difficulty: AIDifficulty) {
+    this.difficulty = difficulty;
   }
 
   async prepareForMove(fen: string): Promise<void> {
@@ -245,13 +253,15 @@ export class CoachingManager {
       evalDelta
     );
 
+    const shouldOfferHint = this.shouldOfferHint(classification);
+
     switch (classification) {
       case "blunder":
         this.toastCallback.error(
           "🚨 Oops!",
           coaching.message || `Big mistake! Lost ${Math.abs(evalDelta / 100).toFixed(1)} pawns`
         );
-        if (bestMove) {
+        if (bestMove && shouldOfferHint) {
           setTimeout(() => {
             this.toastCallback?.info("💡 Better was", `Try ${bestMove} instead!`);
           }, 1500);
@@ -263,7 +273,7 @@ export class CoachingManager {
           "⚠️ Careful!",
           coaching.message || `Lost ${Math.abs(evalDelta / 100).toFixed(1)} pawns`
         );
-        if (bestMove) {
+        if (bestMove && shouldOfferHint) {
           setTimeout(() => {
             this.toastCallback?.info("💡 Hint", `Consider ${bestMove} next time`);
           }, 1200);
@@ -315,11 +325,39 @@ export class CoachingManager {
       }, 2000);
     }
 
-    if (complexityAfter.overallComplexity > 70 && complexityAfter.recommendations.length > 0) {
+    if (
+      complexityAfter.overallComplexity > 70 &&
+      complexityAfter.recommendations.length > 0 &&
+      (this.difficulty === "easy" || shouldOfferHint)
+    ) {
       setTimeout(() => {
         this.toastCallback?.info("🧠 Tip", complexityAfter.recommendations[0]);
       }, 3000);
     }
+  }
+
+  private shouldOfferHint(classification: string): boolean {
+    if (this.difficulty === "easy") {
+      return true;
+    }
+
+    if (classification !== "blunder") {
+      return false;
+    }
+
+    const now = Date.now();
+    if (now - this.lastHintTime < this.HINT_COOLDOWN) {
+      return false;
+    }
+
+    const chance = this.difficulty === "medium" ? 0.4 : 0.2;
+    const shouldHint = Math.random() < chance;
+
+    if (shouldHint) {
+      this.lastHintTime = now;
+    }
+
+    return shouldHint;
   }
 
   reset() {
