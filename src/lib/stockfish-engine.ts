@@ -306,8 +306,13 @@ export class StockfishEngine {
         if (multiPVMatch && pvMatch && scoreMatch) {
           const pvIndex = parseInt(multiPVMatch[1]) - 1;
           const pvMoves = pvMatch[1].trim().split(/\s+/);
+          const firstUciMove =
+            pvMoves.find((move) =>
+              /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move),
+            ) || "";
+
           topMoves[pvIndex] = {
-            move: pvMoves[0] || "",
+            move: firstUciMove,
             eval: parseInt(scoreMatch[1]),
             nodes: nodesMatch ? parseInt(nodesMatch[1]) : undefined,
             pv: pvMoves,
