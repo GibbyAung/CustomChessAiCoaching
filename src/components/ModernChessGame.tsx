@@ -241,21 +241,6 @@ function ChessGameContent({
             color: hintColors[index] ?? hintColors[0],
           }));
 
-        if (arrows.length === 0) {
-          console.log("🧩 [Hints] No multiPV moves found, falling back to best move");
-          const analysis = await stockfishEngine.analyzePosition(gameState.fen, {
-            maxTimeMs: 800,
-            multiPV: 1,
-          });
-          if (analysis.bestMove && analysis.bestMove.length >= 4) {
-            arrows.push({
-              startSquare: analysis.bestMove.slice(0, 2) as Square,
-              endSquare: analysis.bestMove.slice(2, 4) as Square,
-              color: hintColors[0],
-            });
-          }
-        }
-
         console.log("📌 [Hints] Setting hint arrows:", arrows);
         setHintArrows(arrows);
       } catch (error) {
