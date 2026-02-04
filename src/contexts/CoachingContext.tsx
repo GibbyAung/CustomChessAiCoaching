@@ -23,7 +23,12 @@ interface CoachingContextType {
   disableCoaching: () => void;
   setMode: (mode: "coaching" | "ai_opponent") => void;
   setDifficulty: (difficulty: AIDifficulty) => void;
-  updatePosition: (fen: string, lastMove?: string, isHuman?: boolean) => void;
+  updatePosition: (
+    fen: string,
+    lastMove?: string,
+    isHuman?: boolean,
+    previousFen?: string
+  ) => void;
 }
 
 const CoachingContext = createContext<CoachingContextType | undefined>(
@@ -42,6 +47,7 @@ export function CoachingProvider({ children }: { children: React.ReactNode }) {
   // ✅ Debounce refs
   const analysisTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastAnalyzedFenRef = useRef<string>("");
+  const lastAnalyzedMoveRef = useRef<string>("");
 
   const enableCoaching = useCallback(() => {
     setIsEnabled(true);
@@ -57,7 +63,12 @@ export function CoachingProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updatePosition = useCallback(
-    async (fen: string, lastMove?: string, isHuman: boolean = true) => {
+    async (
+      fen: string,
+      lastMove?: string,
+      isHuman: boolean = true,
+      previousFen?: string
+    ) => {
       console.log("🔍 [CoachingContext] updatePosition called:", {
         fen,
         lastMove,
@@ -80,14 +91,27 @@ export function CoachingProvider({ children }: { children: React.ReactNode }) {
       // ✅ NEW: Prepare position for coaching when it's human's turn
       if (isEnabled && isHuman && mode === "coaching") {
         try {
+          if (
+            lastMove &&
+            lastAnalyzedFenRef.current === fen &&
+            lastAnalyzedMoveRef.current === lastMove
+          ) {
+            console.log("⏭️ [CoachingContext] Skipping duplicate analysis");
+            return;
+          }
+
+          const baselineFen = lastMove ? previousFen ?? fen : fen;
+
           // Always prepare the current position for future analysis
-          await coachingManager.prepareForMove(fen);
+          await coachingManager.prepareForMove(baselineFen);
           console.log("🎯 [CoachingContext] Prepared position for coaching");
 
           // If this is a move (not just position update), analyze it immediately
           if (lastMove) {
             console.log("🔍 [CoachingContext] Analyzing human move:", lastMove);
             await coachingManager.analyzeMove(fen, lastMove);
+            lastAnalyzedFenRef.current = fen;
+            lastAnalyzedMoveRef.current = lastMove;
           }
         } catch (error) {
           console.error(

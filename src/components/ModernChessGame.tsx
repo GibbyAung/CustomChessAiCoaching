@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { useChess } from "@/contexts/ChessContext";
 import { useCoaching } from "@/contexts/CoachingContext";
 import { Square } from "chess.js";
+import { Chess } from "chess.js";
 
 // Dynamic imports for better performance
 const ChessBoard = dynamic(
@@ -117,7 +118,27 @@ function ChessGameContent({
         // Wait a bit to ensure AI isn't using Stockfish
         setTimeout(() => {
           try {
-            updatePosition(gameState.fen, gameState.lastMove, isHumanMove);
+            let previousFen: string | undefined;
+            if (gameState.lastMove && gameState.moveHistory.length > 0) {
+              const chess = new Chess();
+              gameState.moveHistory
+                .slice(0, -1)
+                .forEach((move: any) =>
+                  chess.move({
+                    from: move.from,
+                    to: move.to,
+                    promotion: move.promotion,
+                  }),
+                );
+              previousFen = chess.fen();
+            }
+
+            updatePosition(
+              gameState.fen,
+              gameState.lastMove,
+              isHumanMove,
+              previousFen,
+            );
           } catch (err: any) {
             console.error("❌ [CoachingContext] Coaching error:", err);
           }
@@ -212,7 +233,7 @@ function ChessGameContent({
         ];
 
         const arrows = topMoves
-          .filter((move) => move.move && move.move.length >= 4)
+          .filter((move) => move?.move && move.move.length >= 4)
           .slice(0, 3)
           .map((move, index) => ({
             startSquare: move.move.slice(0, 2) as Square,
