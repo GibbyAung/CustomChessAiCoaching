@@ -11,11 +11,17 @@ import { gameSessionManager } from "@/lib/game-session-manager";
 interface ChessBoardProps {
   width?: number;
   showMoveHistory?: boolean;
+  hintArrows?: Array<{
+    startSquare: Square;
+    endSquare: Square;
+    color: string;
+  }>;
 }
 
 export const ChessBoard: React.FC<ChessBoardProps> = ({
   width = 560,
   showMoveHistory = true,
+  hintArrows = [],
 }) => {
   const { gameState, makeMove, getLegalMoves } = useChess();
   const { success, warning, info } = useToast();
@@ -310,6 +316,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                 height: boardSize,
               },
               squareStyles: createSquareStyles(),
+              arrows: hintArrows,
             }}
           />
 
