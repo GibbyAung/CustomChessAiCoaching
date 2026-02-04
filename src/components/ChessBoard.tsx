@@ -316,18 +316,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                 height: boardSize,
               },
               squareStyles: createSquareStyles(),
-              allowDrawingArrows: true,
-              arrowOptions: {
-                color: "rgba(59, 130, 246, 0.9)",
-                secondaryColor: "rgba(34, 197, 94, 0.9)",
-                tertiaryColor: "rgba(249, 115, 22, 0.9)",
-                arrowLengthReducerDenominator: 5,
-                sameTargetArrowLengthReducerDenominator: 2.2,
-                arrowWidthDenominator: 11,
-                activeArrowWidthMultiplier: 1.2,
-                opacity: 0.95,
-                activeOpacity: 1,
-              },
               arrows: hintArrows,
             }}
           />

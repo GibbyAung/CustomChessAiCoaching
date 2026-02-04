@@ -142,14 +142,12 @@ function ChessGameContent({
     const updateHintArrows = async () => {
       if (selectedMode !== "ai_coaching" || aiDifficulty !== "easy") {
         if (hintArrows.length > 0) {
-          console.log("🧹 [Coaching] Clearing hint arrows (mode/difficulty)");
           setHintArrows([]);
         }
         return;
       }
 
       if (gameState.isGameOver) {
-        console.log("🏁 [Coaching] Clearing hint arrows (game over)");
         setHintArrows([]);
         return;
       }
@@ -161,13 +159,11 @@ function ChessGameContent({
         (userColor === "black" && gameState.turn === "b");
 
       if (!isUserTurn) {
-        console.log("⏳ [Coaching] Waiting for user turn, clearing hints");
         setHintArrows([]);
         return;
       }
 
       if (lastHintFenRef.current === gameState.fen) {
-        console.log("🔁 [Coaching] Hint arrows already computed for FEN");
         return;
       }
 
@@ -186,8 +182,6 @@ function ChessGameContent({
           3,
           800,
         );
-
-        console.log("🧭 [Coaching] Top moves for hints:", topMoves);
 
         if (!isActive || hintRequestRef.current !== requestId) {
           return;
@@ -208,7 +202,6 @@ function ChessGameContent({
             color: hintColors[index] ?? hintColors[0],
           }));
 
-        console.log("🏹 [Coaching] Hint arrows computed:", arrows);
         setHintArrows(arrows);
       } catch (error) {
         console.error("❌ [Coaching] Failed to fetch hint arrows:", error);
