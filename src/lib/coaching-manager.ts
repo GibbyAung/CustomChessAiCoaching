@@ -106,14 +106,24 @@ export class CoachingManager {
       multiPV: 3,
     });
 
+    const turnBefore = this.positionBeforeMove.fen.split(" ")[1];
     const turnAfter = fenAfter.split(" ")[1];
-    const evalBefore = this.positionBeforeMove.evaluation;
-    
-    const evalAfter = turnAfter === "b" 
-      ? -analysisAfter.evaluation 
-      : analysisAfter.evaluation;
-    
-    const evalDelta = evalAfter - evalBefore;
+    const moverColor = turnBefore;
+    const evalBeforeRaw = this.positionBeforeMove.evaluation;
+    const evalAfterRaw = analysisAfter.evaluation;
+    const evalBeforeWhite =
+      turnBefore === "b"
+        ? -evalBeforeRaw
+        : evalBeforeRaw;
+    const evalAfterWhite =
+      turnAfter === "b" ? -evalAfterRaw : evalAfterRaw;
+    const evalBeforeForMover =
+      moverColor === "w" ? evalBeforeWhite : -evalBeforeWhite;
+    const evalAfterForMover =
+      moverColor === "w" ? evalAfterWhite : -evalAfterWhite;
+    const evalBefore = evalBeforeForMover;
+    const evalAfter = evalAfterForMover;
+    const evalDelta = evalAfterForMover - evalBeforeForMover;
 
     const complexityAfter = PositionAnalyzer.analyzeComplexity(fenAfter);
     const complexityBefore = this.positionBeforeMove.complexity || {
@@ -166,7 +176,7 @@ export class CoachingManager {
 
     this.positionBeforeMove = {
       fen: fenAfter,
-      evaluation: evalAfter,
+      evaluation: evalAfterRaw,
       bestMove: analysisAfter.bestMove,
       depth: analysisAfter.depth,
       complexity: complexityAfter,
