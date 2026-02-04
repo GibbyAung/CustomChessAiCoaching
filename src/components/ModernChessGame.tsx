@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { useChess } from "@/contexts/ChessContext";
 import { useCoaching } from "@/contexts/CoachingContext";
 import { Square } from "chess.js";
+import { Chess } from "chess.js";
 
 // Dynamic imports for better performance
 const ChessBoard = dynamic(
@@ -117,7 +118,27 @@ function ChessGameContent({
         // Wait a bit to ensure AI isn't using Stockfish
         setTimeout(() => {
           try {
-            updatePosition(gameState.fen, gameState.lastMove, isHumanMove);
+            let previousFen: string | undefined;
+            if (gameState.lastMove && gameState.moveHistory.length > 0) {
+              const chess = new Chess();
+              gameState.moveHistory
+                .slice(0, -1)
+                .forEach((move: any) =>
+                  chess.move({
+                    from: move.from,
+                    to: move.to,
+                    promotion: move.promotion,
+                  }),
+                );
+              previousFen = chess.fen();
+            }
+
+            updatePosition(
+              gameState.fen,
+              gameState.lastMove,
+              isHumanMove,
+              previousFen,
+            );
           } catch (err: any) {
             console.error("❌ [CoachingContext] Coaching error:", err);
           }
@@ -140,14 +161,27 @@ function ChessGameContent({
     let isActive = true;
 
     const updateHintArrows = async () => {
-      if (selectedMode !== "ai_coaching" || aiDifficulty !== "easy") {
+      const shouldShowHints =
+        aiDifficulty === "easy" &&
+        (selectedMode === "ai_coaching" || selectedMode === "ai_opponent");
+
+      console.log("🧭 [Hints] Evaluating hint arrows:", {
+        mode: selectedMode,
+        difficulty: aiDifficulty,
+        shouldShowHints,
+        turn: gameState.turn,
+      });
+
+      if (!shouldShowHints) {
         if (hintArrows.length > 0) {
+          console.log("🧹 [Hints] Clearing hint arrows - hints disabled");
           setHintArrows([]);
         }
         return;
       }
 
       if (gameState.isGameOver) {
+        console.log("🏁 [Hints] Clearing hint arrows - game over");
         setHintArrows([]);
         return;
       }
@@ -159,11 +193,13 @@ function ChessGameContent({
         (userColor === "black" && gameState.turn === "b");
 
       if (!isUserTurn) {
+        console.log("⏳ [Hints] Clearing hint arrows - waiting for user turn");
         setHintArrows([]);
         return;
       }
 
       if (lastHintFenRef.current === gameState.fen) {
+        console.log("🔁 [Hints] Skipping hint update - same position");
         return;
       }
 
@@ -177,6 +213,7 @@ function ChessGameContent({
           await stockfishEngine.initialize();
         }
 
+        console.log("🧠 [Hints] Requesting hint lines from Stockfish");
         const topMoves = await stockfishEngine.getMultipleLines(
           gameState.fen,
           3,
@@ -187,6 +224,8 @@ function ChessGameContent({
           return;
         }
 
+        console.log("✅ [Hints] Received hint lines:", topMoves);
+
         const hintColors = [
           "rgba(34, 197, 94, 0.9)",
           "rgba(59, 130, 246, 0.85)",
@@ -194,7 +233,7 @@ function ChessGameContent({
         ];
 
         const arrows = topMoves
-          .filter((move) => move.move && move.move.length >= 4)
+          .filter((move) => move?.move && move.move.length >= 4)
           .slice(0, 3)
           .map((move, index) => ({
             startSquare: move.move.slice(0, 2) as Square,
@@ -202,6 +241,22 @@ function ChessGameContent({
             color: hintColors[index] ?? hintColors[0],
           }));
 
+        if (arrows.length === 0) {
+          console.log("🧩 [Hints] No multiPV moves found, falling back to best move");
+          const analysis = await stockfishEngine.analyzePosition(gameState.fen, {
+            maxTimeMs: 800,
+            multiPV: 1,
+          });
+          if (analysis.bestMove && analysis.bestMove.length >= 4) {
+            arrows.push({
+              startSquare: analysis.bestMove.slice(0, 2) as Square,
+              endSquare: analysis.bestMove.slice(2, 4) as Square,
+              color: hintColors[0],
+            });
+          }
+        }
+
+        console.log("📌 [Hints] Setting hint arrows:", arrows);
         setHintArrows(arrows);
       } catch (error) {
         console.error("❌ [Coaching] Failed to fetch hint arrows:", error);
@@ -478,9 +533,8 @@ function ChessGameContent({
                   onModeChange={handleModeChange}
                 />
 
-                {/* Difficulty Selection - Only show for AI modes */}
-                {(selectedMode === "ai_opponent" ||
-                  selectedMode === "ai_coaching") && (
+                {/* Difficulty Selection - Only show for coaching */}
+                {selectedMode === "ai_coaching" && (
                   <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-sm font-semibold text-white">
@@ -689,6 +743,22 @@ export function ModernChessGame() {
   const [showPerformance, setShowPerformance] = useState(false);
 
   const currentMode = GAME_MODES[selectedMode];
+
+  useEffect(() => {
+    const unsubscribe = gameSessionManager.subscribe((session) => {
+      if (session?.aiConfig?.difficulty) {
+        console.log("🎚️ [ModernChessGame] Syncing AI difficulty:", {
+          difficulty: session.aiConfig.difficulty,
+          mode: session.mode,
+        });
+        setAiDifficulty(session.aiConfig.difficulty);
+      } else if (!session) {
+        console.log("♻️ [ModernChessGame] No active session - keeping difficulty");
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Initialize engine when component mounts and mode changes
   useEffect(() => {
