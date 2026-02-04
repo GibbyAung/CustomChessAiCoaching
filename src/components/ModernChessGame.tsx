@@ -708,6 +708,22 @@ export function ModernChessGame() {
 
   const currentMode = GAME_MODES[selectedMode];
 
+  useEffect(() => {
+    const unsubscribe = gameSessionManager.subscribe((session) => {
+      if (session?.aiConfig?.difficulty) {
+        console.log("🎚️ [ModernChessGame] Syncing AI difficulty:", {
+          difficulty: session.aiConfig.difficulty,
+          mode: session.mode,
+        });
+        setAiDifficulty(session.aiConfig.difficulty);
+      } else if (!session) {
+        console.log("♻️ [ModernChessGame] No active session - keeping difficulty");
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
   // Initialize engine when component mounts and mode changes
   useEffect(() => {
     console.log(

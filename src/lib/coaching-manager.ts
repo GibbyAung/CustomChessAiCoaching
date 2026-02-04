@@ -160,7 +160,8 @@ export class CoachingManager {
       evalDelta,
       complexityDelta,
       complexityAfter,
-      this.positionBeforeMove.bestMove
+      this.positionBeforeMove.bestMove,
+      moveLabel
     );
 
     this.positionBeforeMove = {
@@ -234,7 +235,8 @@ export class CoachingManager {
     evalDelta: number,
     complexityDelta: number,
     complexityAfter: ComplexityFactors,
-    bestMove: string | null
+    bestMove: string | null,
+    moveLabel: string
   ): void {
     const now = Date.now();
     if (now - this.lastFeedbackTime < this.FEEDBACK_COOLDOWN) {
