@@ -126,12 +126,41 @@ function getNextStep(phase: string, classification: string): string {
   }
 }
 
+function getMoveAssessment(
+  moveLabel: string,
+  classification: string
+): string {
+  if (!moveLabel) {
+    return "";
+  }
+
+  switch (classification) {
+    case "brilliant":
+      return `Move ${moveLabel} was inspired.`;
+    case "excellent":
+      return `Move ${moveLabel} was excellent.`;
+    case "good":
+      return `Move ${moveLabel} was a good choice.`;
+    case "inaccuracy":
+      return `Move ${moveLabel} was a bit inaccurate.`;
+    case "mistake":
+      return `Move ${moveLabel} was a mistake.`;
+    case "blunder":
+      return `Move ${moveLabel} was a blunder.`;
+    case "neutral":
+      return `Move ${moveLabel} was okay, but there were stronger options.`;
+    default:
+      return `Move ${moveLabel} was played.`;
+  }
+}
+
 // Generate human-like coaching feedback
 export function generateHumanCoaching(
   classification: string,
   complexity: number,
   phase: string,
-  evalDelta: number
+  evalDelta: number,
+  moveLabel: string
 ): {
   message: string;
   encouragement: string;
@@ -191,7 +220,9 @@ export function generateHumanCoaching(
   }
 
   // Combine messages
-  const fullMessage = [message, phaseMessage, complexityMessage]
+  const moveAssessment = getMoveAssessment(moveLabel, classification);
+
+  const fullMessage = [moveAssessment, message, phaseMessage, complexityMessage]
     .filter(m => m.length > 0)
     .join(" ");
 
