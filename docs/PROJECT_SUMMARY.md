@@ -30,10 +30,7 @@ src/
 ├── components/            # React Components
 │   ├── ChessBoard.tsx    # Main chess board
 │   ├── AIOpponent.tsx    # AI opponent logic
-│   ├── GameControls.tsx  # Game control buttons
-│   ├── AnalyticsDashboard.tsx # Analytics interface
-│   ├── PerformanceAnalysisDashboard.tsx # Performance analysis
-│   └── FeedbackSystem.tsx # User feedback system
+│   └── GameControls.tsx  # Game control buttons
 ├── contexts/             # React Contexts
 │   ├── ChessContext.tsx  # Game state management
 │   ├── ChessEngineContext.tsx # WASM engine integration
@@ -70,6 +67,11 @@ src/
   - Real-time move analysis
   - Performance optimization with alpha-beta pruning
 
+- **Adaptive AI Coaching**
+  - Coaching difficulty tied to Easy/Medium/Hard
+  - Easy mode highlights multiple best-move arrows
+  - Medium/Hard focus on live coaching with occasional blunder hints
+
 - **User Interface**
   - Responsive design (desktop, tablet, mobile)
   - Drag-and-drop piece movement
@@ -101,12 +103,6 @@ src/
   - Performance trend analysis
   - Optimization recommendations
   - Detailed performance reports
-
-- **User Feedback System**
-  - 5-star rating system
-  - Categorized feedback collection
-  - Bug reporting functionality
-  - Analytics data integration
 
 ### 🔧 Technical Features
 
