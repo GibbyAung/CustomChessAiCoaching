@@ -4,6 +4,7 @@ import { stockfishEngine } from "./stockfish-engine";
 import { PositionAnalyzer, ComplexityFactors } from "./position-analyzer";
 import { generateHumanCoaching } from "./human-coaching";
 import { AIDifficulty } from "@/types/game-modes";
+import { Chess } from "chess.js";
 
 export interface MoveEvaluation {
   fen: string;
@@ -97,6 +98,8 @@ export class CoachingManager {
       return;
     }
 
+    const moveLabel = this.describeMove(playedMove, this.positionBeforeMove.fen);
+
     const analysisAfter = await stockfishEngine.analyzePosition(fenAfter, {
       maxDepth: 15,
       maxTimeMs: 1500,
@@ -127,6 +130,7 @@ export class CoachingManager {
 
     console.log("📊 [Coaching] Move Analysis:", {
       playedMove,
+      moveLabel,
       evalBefore,
       evalAfter,
       evalDelta,
@@ -250,7 +254,8 @@ export class CoachingManager {
       classification,
       complexityAfter.overallComplexity,
       complexityAfter.phase,
-      evalDelta
+      evalDelta,
+      moveLabel
     );
 
     const shouldOfferHint = this.shouldOfferHint(classification);
@@ -358,6 +363,34 @@ export class CoachingManager {
     }
 
     return shouldHint;
+  }
+
+  private describeMove(playedMove: string, fenBefore: string): string {
+    if (!playedMove || playedMove.length < 4) {
+      return "";
+    }
+
+    const from = playedMove.slice(0, 2);
+    const to = playedMove.slice(2, 4);
+    const promotion = playedMove.length > 4 ? playedMove.slice(4, 5) : undefined;
+    const uciLabel = `${from}-${to}${promotion ? `=${promotion.toUpperCase()}` : ""}`;
+
+    try {
+      const chess = new Chess(fenBefore);
+      const result = chess.move({
+        from,
+        to,
+        promotion: promotion as "q" | "r" | "b" | "n" | undefined,
+      });
+
+      if (result?.san) {
+        return `${result.san} (${uciLabel})`;
+      }
+    } catch (error) {
+      console.warn("⚠️ [Coaching] Failed to describe move:", error);
+    }
+
+    return uciLabel;
   }
 
   reset() {

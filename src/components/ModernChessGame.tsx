@@ -140,14 +140,27 @@ function ChessGameContent({
     let isActive = true;
 
     const updateHintArrows = async () => {
-      if (selectedMode !== "ai_coaching" || aiDifficulty !== "easy") {
+      const shouldShowHints =
+        aiDifficulty === "easy" &&
+        (selectedMode === "ai_coaching" || selectedMode === "ai_opponent");
+
+      console.log("🧭 [Hints] Evaluating hint arrows:", {
+        mode: selectedMode,
+        difficulty: aiDifficulty,
+        shouldShowHints,
+        turn: gameState.turn,
+      });
+
+      if (!shouldShowHints) {
         if (hintArrows.length > 0) {
+          console.log("🧹 [Hints] Clearing hint arrows - hints disabled");
           setHintArrows([]);
         }
         return;
       }
 
       if (gameState.isGameOver) {
+        console.log("🏁 [Hints] Clearing hint arrows - game over");
         setHintArrows([]);
         return;
       }
@@ -159,11 +172,13 @@ function ChessGameContent({
         (userColor === "black" && gameState.turn === "b");
 
       if (!isUserTurn) {
+        console.log("⏳ [Hints] Clearing hint arrows - waiting for user turn");
         setHintArrows([]);
         return;
       }
 
       if (lastHintFenRef.current === gameState.fen) {
+        console.log("🔁 [Hints] Skipping hint update - same position");
         return;
       }
 
@@ -177,6 +192,7 @@ function ChessGameContent({
           await stockfishEngine.initialize();
         }
 
+        console.log("🧠 [Hints] Requesting hint lines from Stockfish");
         const topMoves = await stockfishEngine.getMultipleLines(
           gameState.fen,
           3,
@@ -186,6 +202,8 @@ function ChessGameContent({
         if (!isActive || hintRequestRef.current !== requestId) {
           return;
         }
+
+        console.log("✅ [Hints] Received hint lines:", topMoves);
 
         const hintColors = [
           "rgba(34, 197, 94, 0.9)",
@@ -202,6 +220,7 @@ function ChessGameContent({
             color: hintColors[index] ?? hintColors[0],
           }));
 
+        console.log("📌 [Hints] Setting hint arrows:", arrows);
         setHintArrows(arrows);
       } catch (error) {
         console.error("❌ [Coaching] Failed to fetch hint arrows:", error);
@@ -478,9 +497,8 @@ function ChessGameContent({
                   onModeChange={handleModeChange}
                 />
 
-                {/* Difficulty Selection - Only show for AI modes */}
-                {(selectedMode === "ai_opponent" ||
-                  selectedMode === "ai_coaching") && (
+                {/* Difficulty Selection - Only show for coaching */}
+                {selectedMode === "ai_coaching" && (
                   <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-sm font-semibold text-white">
