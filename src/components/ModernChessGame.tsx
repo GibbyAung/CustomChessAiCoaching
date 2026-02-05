@@ -121,15 +121,13 @@ function ChessGameContent({
             let previousFen: string | undefined;
             if (gameState.lastMove && gameState.moveHistory.length > 0) {
               const chess = new Chess();
-              gameState.moveHistory
-                .slice(0, -1)
-                .forEach((move: any) =>
-                  chess.move({
-                    from: move.from,
-                    to: move.to,
-                    promotion: move.promotion,
-                  }),
-                );
+              gameState.moveHistory.slice(0, -1).forEach((move: any) =>
+                chess.move({
+                  from: move.from,
+                  to: move.to,
+                  promotion: move.promotion,
+                }),
+              );
               previousFen = chess.fen();
             }
 
@@ -297,7 +295,7 @@ function ChessGameContent({
               onClick={() => setShowGameMenu(true)}
               variant="outline"
               size="sm"
-              className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm border border-amber-500/30 text-white hover:from-amber-500/30 hover:to-orange-500/30 shadow-lg"
+              className="bg-linear-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm border border-amber-500/30 text-white hover:from-amber-500/30 hover:to-orange-500/30 shadow-lg"
             >
               ⚙️ Game Menu
             </Button>
@@ -738,7 +736,9 @@ export function ModernChessGame() {
         });
         setAiDifficulty(session.aiConfig.difficulty);
       } else if (!session) {
-        console.log("♻️ [ModernChessGame] No active session - keeping difficulty");
+        console.log(
+          "♻️ [ModernChessGame] No active session - keeping difficulty",
+        );
       }
     });
 
